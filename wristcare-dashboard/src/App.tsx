@@ -148,10 +148,183 @@ function App() {
   }, [user]);
 
   // Alerts log history states
-  const [viewMode, setViewMode] = useState<'monitor' | 'alerts_history'>('monitor');
+  const [viewMode, setViewMode] = useState<'monitor' | 'alerts_history' | 'profile'>('monitor');
   const [allAlertsLog, setAllAlertsLog] = useState<any[]>([]);
   const [isFetchingAllAlerts, setIsFetchingAllAlerts] = useState(false);
   const [selectedLetterAlert, setSelectedLetterAlert] = useState<any | null>(null);
+
+  // Profile and Connections Dynamic States
+  const [allClinicians, setAllClinicians] = useState<any[]>([]);
+  const [allPatients, setAllPatients] = useState<any[]>([]);
+  const [userConnections, setUserConnections] = useState<any>({ doctor: null, family: [], patients: [] });
+  const [isFetchingConnections, setIsFetchingConnections] = useState(false);
+
+  // Profile Update Form States
+  const [profileName, setProfileName] = useState(user ? user.name : '');
+  const [profileEmail, setProfileEmail] = useState(user ? user.email : '');
+  const [profileSpecialty, setProfileSpecialty] = useState(user && user.role === 'clinician' ? (user.details?.specialty || 'General Practice') : '');
+  const [profileBirthDate, setProfileBirthDate] = useState(user && user.role === 'patient' && user.details?.birth_date ? user.details.birth_date.split('T')[0] : '');
+  const [profilePrimaryClinicianId, setProfilePrimaryClinicianId] = useState(user && user.role === 'patient' && user.details?.primary_clinician_id ? user.details.primary_clinician_id : '');
+  const [profilePatientId, setProfilePatientId] = useState(user && user.role === 'family' && user.details?.patient_id ? user.details.patient_id : '');
+  const [profileRelationship, setProfileRelationship] = useState(user && user.role === 'family' && user.details?.relationship ? user.details.relationship : 'Son');
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+
+  // Sync Form States on User Load
+  useEffect(() => {
+    if (user) {
+      setProfileName(user.name || '');
+      setProfileEmail(user.email || '');
+      if (user.role === 'clinician') {
+        setProfileSpecialty(user.details?.specialty || 'General Practice');
+      } else if (user.role === 'patient') {
+        setProfileBirthDate(user.details?.birth_date ? user.details.birth_date.split('T')[0] : '');
+        setProfilePrimaryClinicianId(user.details?.primary_clinician_id || '');
+      } else if (user.role === 'family') {
+        setProfilePatientId(user.details?.patient_id || '');
+        setProfileRelationship(user.details?.relationship || 'Son');
+      }
+    }
+  }, [user]);
+
+  // Fetch Available Clinicians (Doctors)
+  const fetchAllClinicians = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/clinicians`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAllClinicians(data);
+      }
+    } catch (e) {
+      console.error('Error fetching clinicians:', e);
+    }
+  };
+
+  // Fetch Available Patients
+  const fetchAllPatients = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/patients`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAllPatients(data);
+      }
+    } catch (e) {
+      console.error('Error fetching patients:', e);
+    }
+  };
+
+  // Fetch Active Role Connections
+  const fetchUserConnections = async () => {
+    if (!token) return;
+    setIsFetchingConnections(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/connections`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUserConnections(data);
+      }
+    } catch (e) {
+      console.error('Error fetching connections:', e);
+    } finally {
+      setIsFetchingConnections(false);
+    }
+  };
+
+  // Execute Dynamic Profile and Connection updates
+  const handleProfileUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    setIsUpdatingProfile(true);
+
+    try {
+      const payload: any = {
+        name: profileName,
+        email: profileEmail
+      };
+
+      if (user.role === 'clinician') {
+        payload.specialty = profileSpecialty;
+      } else if (user.role === 'patient') {
+        payload.birthDate = profileBirthDate;
+        payload.primaryClinicianId = profilePrimaryClinicianId;
+      } else if (user.role === 'family') {
+        payload.patientId = profilePatientId;
+        payload.relationship = profileRelationship;
+      }
+
+      const res = await fetch(`${API_BASE}/api/auth/profile/update`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to update profile.');
+      }
+
+      // Save credentials locally
+      localStorage.setItem('wristcare_user', JSON.stringify(data.user));
+      setUser(data.user);
+
+      // Refresh listings
+      await Promise.all([
+        fetchUserConnections(),
+        fetchAllPatients(),
+        fetchAllClinicians(),
+        fetchClinicianData()
+      ]);
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Profile Updated',
+        text: 'Your profile settings and connections have been securely updated.',
+        customClass: {
+          popup: 'swal-custom-popup',
+          title: 'swal-custom-title',
+          htmlContainer: 'swal-custom-html',
+          confirmButton: 'swal-custom-confirm-btn'
+        },
+        buttonsStyling: false
+      });
+    } catch (err: any) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Update Failed',
+        text: err.message || 'An error occurred during updating.',
+        customClass: {
+          popup: 'swal-custom-popup',
+          title: 'swal-custom-title',
+          htmlContainer: 'swal-custom-html',
+          confirmButton: 'swal-custom-confirm-btn'
+        },
+        buttonsStyling: false
+      });
+    } finally {
+      setIsUpdatingProfile(false);
+    }
+  };
+
+  // Populate Dropdown Meta-data on token detection
+  useEffect(() => {
+    if (token && user) {
+      if (user.role !== 'super_admin') {
+        fetchAllPatients();
+        fetchAllClinicians();
+        fetchUserConnections();
+      }
+    }
+  }, [token, user]);
 
   const getPatientBirthDate = (pId: string) => {
     if (!pId) return 'N/A';
@@ -394,27 +567,46 @@ function App() {
 
   const fetchClinicianData = async () => {
     try {
-      // 1. Fetch clinic patients from DB
-      const resPatients = await fetch(`${API_BASE}/api/auth/me`, {
+      // Fetch clinic patients from DB
+      const res = await fetch(`${API_BASE}/api/auth/patients`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (resPatients.ok) {
-        
-        // Lookup patients in this organization
-        // For demonstration robustness, let's seed or use existing ones if none returned
-        const demoPatients = [
-          { id: 'demo-p1', firstName: 'Ahmad', lastName: 'Ali', birth_date: '1954-04-12' },
-          { id: 'demo-p2', firstName: 'Fatima', lastName: 'Omar', birth_date: '1958-09-22' },
-          { id: 'demo-p3', firstName: 'Ziad', lastName: 'Mansour', birth_date: '1946-08-15' }
-        ];
-        setClinicianPatients(demoPatients);
-        
-        // Read historical vitals for active selection
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.length > 0) {
+          const mapped = data.map((p: any) => ({
+            id: p.id,
+            firstName: p.first_name,
+            lastName: p.last_name,
+            birth_date: p.birth_date ? p.birth_date.split('T')[0] : 'N/A',
+            email: p.email,
+            primaryClinicianId: p.primary_clinician_id
+          }));
+          setClinicianPatients(mapped);
+          
+          // Use selectedPatientId if it's already in the list, otherwise pick the first one
+          const exists = mapped.find((p: any) => p.id === selectedPatientId);
+          if (!exists) {
+            setSelectedPatientId(mapped[0].id);
+          }
+        } else {
+          // Fallback to demo patients so demo is always rich
+          const demoPatients = [
+            { id: 'demo-p1', firstName: 'Ahmad', lastName: 'Ali', birth_date: '1954-04-12' },
+            { id: 'demo-p2', firstName: 'Fatima', lastName: 'Omar', birth_date: '1958-09-22' },
+            { id: 'demo-p3', firstName: 'Ziad', lastName: 'Mansour', birth_date: '1946-08-15' }
+          ];
+          setClinicianPatients(demoPatients);
+        }
+      }
+      
+      // Read historical vitals for active selection
+      if (selectedPatientId) {
         fetchPatientVitals(selectedPatientId);
         fetchPatientThresholds(selectedPatientId);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Error in fetchClinicianData:', e);
     }
   };
 
@@ -1121,6 +1313,13 @@ function App() {
               >
                 Comprehensive Alerts History Log
               </button>
+              <button 
+                className={`auth-tab-btn ${viewMode === 'profile' ? 'active' : ''}`}
+                onClick={() => setViewMode('profile')}
+                style={{ padding: '8px 18px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, border: 0, cursor: 'pointer', transition: 'var(--transition-smooth)' }}
+              >
+                My Profile & Patient Directory
+              </button>
             </div>
 
             {viewMode === 'monitor' && (
@@ -1264,6 +1463,142 @@ function App() {
                   </table>
                 </div>
               )}
+            </div>
+          ) : viewMode === 'profile' ? (
+            <div className="charts-panel glass-panel" style={{ width: '100%', padding: '24px', animation: 'fadeIn 0.4s ease' }}>
+              <div className="panel-header" style={{ marginBottom: '24px' }}>
+                <div>
+                  <h2 style={{ fontSize: '20px', fontWeight: 800 }}>Dr. {user.name} - Account Profile & Attending Registry</h2>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Manage clinician credentials and view organization connected patient details</span>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '24px', alignItems: 'start' }}>
+                {/* Profile Form */}
+                <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', border: '1px solid var(--border-glass)' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '16px', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
+                    Clinician Credentials
+                  </h3>
+                  <form onSubmit={handleProfileUpdate} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Full Name</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        value={profileName} 
+                        onChange={e => setProfileName(e.target.value)} 
+                        required 
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Email Address</label>
+                      <input 
+                        type="email" 
+                        className="form-control" 
+                        value={profileEmail} 
+                        onChange={e => setProfileEmail(e.target.value)} 
+                        required 
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Specialty / Area of Practice</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        value={profileSpecialty} 
+                        onChange={e => setProfileSpecialty(e.target.value)} 
+                        placeholder="e.g. Cardiology, General Medicine"
+                        required 
+                      />
+                    </div>
+                    <button 
+                      type="submit" 
+                      className="btn btn-primary" 
+                      disabled={isUpdatingProfile}
+                      style={{ marginTop: '10px' }}
+                    >
+                      {isUpdatingProfile ? 'Saving Changes...' : 'Update Account'}
+                    </button>
+                  </form>
+                </div>
+
+                {/* Patient Directory */}
+                <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', border: '1px solid var(--border-glass)' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '16px', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
+                    Attending Patient Registry ({userConnections.patients?.length || 0})
+                  </h3>
+                  
+                  {isFetchingConnections ? (
+                    <div className="no-data">Fetching connection listings...</div>
+                  ) : !userConnections.patients || userConnections.patients.length === 0 ? (
+                    <div className="no-data" style={{ padding: '40px 20px', textAlign: 'center' }}>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '13px', margin: 0 }}>
+                        No connected patients registered under your clinic account directory.
+                      </p>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '11px', marginTop: '6px' }}>
+                        Provide your clinic/organization registration ID to patients. Once they select you as their primary attending clinician, they will appear dynamically in your dashboard.
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {userConnections.patients.map((pat: any) => (
+                        <div key={pat.id} className="glass-panel" style={{ padding: '14px', borderRadius: '8px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', flexWrap: 'wrap', gap: '10px' }}>
+                            <div>
+                              <h4 style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>{pat.first_name} {pat.last_name}</h4>
+                              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                Born: {pat.birth_date ? pat.birth_date.split('T')[0] : 'N/A'} • Email: {pat.email}
+                              </p>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                  ID: <code style={{ color: 'var(--primary)' }}>{pat.id}</code>
+                                </span>
+                                <button 
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(pat.id);
+                                    Swal.fire({
+                                      icon: 'success',
+                                      title: 'Copied!',
+                                      text: 'Patient connection ID copied to clipboard.',
+                                      timer: 1500,
+                                      showConfirmButton: false,
+                                      customClass: {
+                                        popup: 'swal-custom-popup',
+                                        title: 'swal-custom-title',
+                                        htmlContainer: 'swal-custom-html'
+                                      }
+                                    });
+                                  }}
+                                  style={{ padding: '2px 6px', fontSize: '9px', borderRadius: '4px', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', color: 'var(--text-secondary)' }}
+                                >
+                                  Copy ID
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Family contact block */}
+                            <div style={{ minWidth: '180px' }}>
+                              <h5 style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '6px' }}>Authorized Guardians:</h5>
+                              {!pat.family || pat.family.length === 0 ? (
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No family guardians linked</span>
+                              ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                  {pat.family.map((f: any, idx: number) => (
+                                    <div key={idx} style={{ fontSize: '10px', background: 'rgba(99, 102, 241, 0.05)', padding: '4px 8px', borderRadius: '4px', border: '1px solid rgba(99,102,241,0.1)' }}>
+                                      <strong style={{ color: 'var(--primary)' }}>{f.relationship}:</strong> {f.name}
+                                      <div style={{ color: 'var(--text-muted)', fontSize: '9px', marginTop: '1px' }}>{f.email}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           ) : (
             <>
@@ -1489,81 +1824,332 @@ function App() {
         // 3. PATIENT DASHBOARD VIEW
         // ==========================================
         <div style={{ padding: '24px 0', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          <div className="glass-panel" style={{ padding: '20px', borderRadius: '16px', background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99,102,241,0.1)' }}>
-            <h2>أهلاً بك يا {user.name} 👋</h2>
-            <p style={{ color: 'var(--text-secondary)', marginTop: '6px' }}>حالتك الصحية مراقبة مباشرة من خلال ساعتك الذكية. يتم إرسال نبضات القلب ونسبة الأكسجين لمركز المتابعة الطبي الخاص بك تلقائياً.</p>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
-            {/* Heart Rate Card */}
-            <div className={`vital-card glass-panel ${getOverallSeverity(latestVital.evaluated_severity)}`} style={{ padding: '30px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <Heart size={28} className="vital-icon" style={{ animation: latestVital.heart_rate > 100 ? 'pulse-icon 0.6s infinite alternate' : 'none', color: 'var(--primary)' }} />
-                  <h3 style={{ fontSize: '20px' }}>معدل نبضات القلب</h3>
-                </div>
-                <span className={`severity-badge ${getOverallSeverity(latestVital.evaluated_severity)}`} style={{ fontSize: '12px', padding: '4px 10px' }}>
-                  {latestVital.evaluated_severity === 'Normal' ? 'مستقر' : 'غير مستقر'}
-                </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', margin: '24px 0' }}>
-                <span style={{ fontSize: '64px', fontWeight: 900 }}>{latestVital.heart_rate || '--'}</span>
-                <span style={{ fontSize: '18px', color: 'var(--text-muted)' }}>نبضة / دقيقة</span>
-              </div>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>المعدل الطبيعي: 60 - 100 نبضة</p>
-            </div>
-
-            {/* SpO2 Card */}
-            <div className={`vital-card glass-panel ${getOverallSeverity(latestVital.spo2 < 95 ? 'Emergency' : 'Normal')}`} style={{ padding: '30px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <TrendingUp size={28} style={{ color: 'var(--normal)' }} />
-                  <h3 style={{ fontSize: '20px' }}>نسبة الأكسجين بالدم</h3>
-                </div>
-                <span className={`severity-badge ${latestVital.spo2 >= 95 ? 'normal' : 'emergency'}`} style={{ fontSize: '12px', padding: '4px 10px' }}>
-                  {latestVital.spo2 >= 95 ? 'ممتاز' : 'منخفض'}
-                </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', margin: '24px 0' }}>
-                <span style={{ fontSize: '64px', fontWeight: 900 }}>{latestVital.spo2 || '--'}</span>
-                <span style={{ fontSize: '18px', color: 'var(--text-muted)' }}>%</span>
-              </div>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>النسبة الطبيعية: 95% - 100%</p>
-            </div>
-
-            {/* Blood Pressure Card */}
-            <div className={`vital-card glass-panel ${getOverallSeverity(latestVital.systolic_bp >= 140 ? 'Emergency' : 'Normal')}`} style={{ padding: '30px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <Activity size={28} style={{ color: 'var(--normal)' }} />
-                  <h3 style={{ fontSize: '20px' }}>ضغط الدم</h3>
-                </div>
-                <span className={`severity-badge ${latestVital.systolic_bp < 140 ? 'normal' : 'emergency'}`} style={{ fontSize: '12px', padding: '4px 10px' }}>
-                  {latestVital.systolic_bp < 140 ? 'طبيعي' : 'مرتفع'}
-                </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', margin: '24px 0' }}>
-                <span style={{ fontSize: '64px', fontWeight: 900 }}>
-                  {latestVital.systolic_bp && latestVital.diastolic_bp ? `${latestVital.systolic_bp}/${latestVital.diastolic_bp}` : '--/--'}
-                </span>
-                <span style={{ fontSize: '18px', color: 'var(--text-muted)' }}>mmHg</span>
-              </div>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>الضغط المثالي: أقل من 120/80</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            <div className="glass-panel" style={{ display: 'inline-flex', padding: '4px', borderRadius: '10px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)' }}>
+              <button 
+                className={`auth-tab-btn ${viewMode === 'monitor' ? 'active' : ''}`}
+                onClick={() => setViewMode('monitor')}
+                style={{ padding: '8px 18px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, border: 0, cursor: 'pointer', transition: 'var(--transition-smooth)' }}
+              >
+                شاشة المراقبة الطبية (Monitor)
+              </button>
+              <button 
+                className={`auth-tab-btn ${viewMode === 'profile' ? 'active' : ''}`}
+                onClick={() => setViewMode('profile')}
+                style={{ padding: '8px 18px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, border: 0, cursor: 'pointer', transition: 'var(--transition-smooth)' }}
+              >
+                الملف الشخصي والروابط الطبية (Profile & Connections)
+              </button>
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
-            <button 
-              onClick={handleSOSPanic} 
-              className="btn btn-danger" 
-              style={{ padding: '16px 40px', fontSize: '18px', borderRadius: '12px', display: 'flex', gap: '10px', alignItems: 'center', boxShadow: '0 0 20px rgba(244, 63, 94, 0.4)' }}
-            >
-              <AlertOctagon size={24} />
-              <span>إرسال نداء استغاثة فوري (SOS)</span>
-            </button>
-          </div>
-          {vitalsSyncMsg && (
-            <div style={{ textAlign: 'center', fontSize: '14px', color: 'var(--normal)' }}>{vitalsSyncMsg}</div>
+          {viewMode === 'profile' ? (
+            <div className="charts-panel glass-panel" style={{ width: '100%', padding: '24px', animation: 'fadeIn 0.4s ease' }}>
+              <div className="panel-header" style={{ marginBottom: '24px' }}>
+                <div>
+                  <h2 style={{ fontSize: '20px', fontWeight: 800 }}>تعديل الملف الشخصي والربط الطبي • Profile & Connections</h2>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>قم بتعديل بياناتك وتحديد طبيبك المتابع واستعراض أفراد العائلة المشتركين</span>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', alignItems: 'start' }}>
+                {/* Account Details Form */}
+                <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', border: '1px solid var(--border-glass)' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '16px', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
+                    بيانات الحساب الشخصي (Personal Details)
+                  </h3>
+                  <form onSubmit={handleProfileUpdate} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>الاسم الكامل (Full Name)</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        value={profileName} 
+                        onChange={e => setProfileName(e.target.value)} 
+                        required 
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>البريد الإلكتروني (Email Address)</label>
+                      <input 
+                        type="email" 
+                        className="form-control" 
+                        value={profileEmail} 
+                        onChange={e => setProfileEmail(e.target.value)} 
+                        required 
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>تاريخ الميلاد (Date of Birth)</label>
+                      <input 
+                        type="date" 
+                        className="form-control" 
+                        value={profileBirthDate} 
+                        onChange={e => setProfileBirthDate(e.target.value)} 
+                        required 
+                      />
+                    </div>
+                    <button 
+                      type="submit" 
+                      className="btn btn-primary" 
+                      disabled={isUpdatingProfile}
+                      style={{ marginTop: '10px' }}
+                    >
+                      {isUpdatingProfile ? 'جاري الحفظ...' : 'حفظ البيانات والتغييرات'}
+                    </button>
+                  </form>
+                </div>
+
+                {/* Connection details */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {/* Doctor connection Card */}
+                  <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', border: '1px solid var(--border-glass)' }}>
+                    <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '16px', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
+                      المرشد الطبي المتابع (Primary Clinician)
+                    </h3>
+                    
+                    {userConnections.doctor ? (
+                      <div className="glass-panel" style={{ padding: '14px', borderRadius: '8px', background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99,102,241,0.1)', marginBottom: '16px' }}>
+                        <h4 style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                          Dr. {userConnections.doctor.firstName} {userConnections.doctor.lastName}
+                        </h4>
+                        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                          Specialty: <strong style={{ color: 'var(--primary)' }}>{userConnections.doctor.specialty}</strong>
+                        </p>
+                        <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          Email: {userConnections.doctor.email}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="glass-panel" style={{ padding: '14px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239,68,68,0.1)', marginBottom: '16px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                        لم يتم ربط طبيب متابع بحسابك بعد. يرجى اختيار طبيب لتسهيل مراقبة علاماتك الحيوية.
+                      </div>
+                    )}
+
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>تغيير الطبيب المتابع (Change Attending Clinician)</label>
+                      <select 
+                        className="form-control" 
+                        value={profilePrimaryClinicianId} 
+                        onChange={e => setProfilePrimaryClinicianId(e.target.value)}
+                        style={{ background: 'var(--bg-glass)', color: 'var(--text-primary)' }}
+                      >
+                        <option value="" style={{ background: '#0f172a' }}>-- اختر الطبيب المعالج --</option>
+                        {allClinicians.map(c => (
+                          <option key={c.id} value={c.id} style={{ background: '#0f172a' }}>
+                            Dr. {c.firstName} {c.lastName} ({c.specialty})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Family connections Card */}
+                  <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', border: '1px solid var(--border-glass)' }}>
+                    <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '16px', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
+                      المراقبون من أفراد العائلة (Family Monitors)
+                    </h3>
+                    
+                    {!userConnections.family || userConnections.family.length === 0 ? (
+                      <div style={{ color: 'var(--text-muted)', fontSize: '12px', padding: '10px 0' }}>
+                        لم يتم ربط أي أفراد عائلة بحسابك بعد.
+                        <div style={{ fontSize: '12px', marginTop: '10px', color: 'var(--text-secondary)' }}>
+                          كود الربط الخاص بك لمشاركته مع العائلة:
+                        </div>
+                        <div style={{ 
+                          marginTop: '8px', 
+                          padding: '8px 12px', 
+                          background: 'rgba(255,255,255,0.03)', 
+                          border: '1px solid rgba(255,255,255,0.08)', 
+                          borderRadius: '8px', 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center',
+                          direction: 'ltr'
+                        }}>
+                          <span style={{ color: 'var(--primary)', fontWeight: 700, fontSize: '12px', fontFamily: 'monospace' }}>
+                            {user.details?.id || 'N/A'}
+                          </span>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(user.details?.id || '');
+                              Swal.fire({
+                                icon: 'success',
+                                title: 'نسخ الكود',
+                                text: 'تم نسخ كود الربط العائلي بنجاح!',
+                                timer: 1500,
+                                showConfirmButton: false,
+                                customClass: {
+                                  popup: 'swal-custom-popup',
+                                  title: 'swal-custom-title',
+                                  htmlContainer: 'swal-custom-html'
+                                }
+                              });
+                            }}
+                            style={{ 
+                              padding: '4px 10px', 
+                              fontSize: '10px', 
+                              borderRadius: '6px', 
+                              cursor: 'pointer', 
+                              background: 'rgba(99, 102, 241, 0.15)', 
+                              border: '1px solid rgba(99, 102, 241, 0.3)', 
+                              color: 'var(--primary)',
+                              fontWeight: 600
+                            }}
+                          >
+                            Copy Code
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                          كود الربط العائلي الخاص بك لمشاركته مع العائلة:
+                        </div>
+                        <div style={{ 
+                          padding: '8px 12px', 
+                          background: 'rgba(255,255,255,0.03)', 
+                          border: '1px solid rgba(255,255,255,0.08)', 
+                          borderRadius: '8px', 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center',
+                          direction: 'ltr',
+                          marginBottom: '8px'
+                        }}>
+                          <span style={{ color: 'var(--primary)', fontWeight: 700, fontSize: '12px', fontFamily: 'monospace' }}>
+                            {user.details?.id || 'N/A'}
+                          </span>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(user.details?.id || '');
+                              Swal.fire({
+                                icon: 'success',
+                                title: 'نسخ الكود',
+                                text: 'تم نسخ كود الربط العائلي بنجاح!',
+                                timer: 1500,
+                                showConfirmButton: false,
+                                customClass: {
+                                  popup: 'swal-custom-popup',
+                                  title: 'swal-custom-title',
+                                  htmlContainer: 'swal-custom-html'
+                                }
+                              });
+                            }}
+                            style={{ 
+                              padding: '4px 10px', 
+                              fontSize: '10px', 
+                              borderRadius: '6px', 
+                              cursor: 'pointer', 
+                              background: 'rgba(99, 102, 241, 0.15)', 
+                              border: '1px solid rgba(99, 102, 241, 0.3)', 
+                              color: 'var(--primary)',
+                              fontWeight: 600
+                            }}
+                          >
+                            Copy Code
+                          </button>
+                        </div>
+                        {userConnections.family.map((f: any) => (
+                          <div key={f.id} className="glass-panel" style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div>
+                                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>{f.name}</span>
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{f.email}</div>
+                              </div>
+                              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--primary)', background: 'rgba(99, 102, 241, 0.1)', padding: '2px 8px', borderRadius: '12px' }}>
+                                {f.relationship === 'Son' ? 'ابن / ابنہ' : f.relationship === 'Spouse' ? 'زوج / زوجة' : f.relationship}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="glass-panel" style={{ padding: '20px', borderRadius: '16px', background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99,102,241,0.1)' }}>
+                <h2>أهلاً بك يا {user.name} 👋</h2>
+                <p style={{ color: 'var(--text-secondary)', marginTop: '6px' }}>حالتك الصحية مراقبة مباشرة من خلال ساعتك الذكية. يتم إرسال نبضات القلب ونسبة الأكسجين لمركز المتابعة الطبي الخاص بك تلقائياً.</p>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
+                {/* Heart Rate Card */}
+                <div className={`vital-card glass-panel ${getOverallSeverity(latestVital.evaluated_severity)}`} style={{ padding: '30px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <Heart size={28} className="vital-icon" style={{ animation: latestVital.heart_rate > 100 ? 'pulse-icon 0.6s infinite alternate' : 'none', color: 'var(--primary)' }} />
+                      <h3 style={{ fontSize: '20px' }}>معدل نبضات القلب</h3>
+                    </div>
+                    <span className={`severity-badge ${getOverallSeverity(latestVital.evaluated_severity)}`} style={{ fontSize: '12px', padding: '4px 10px' }}>
+                      {latestVital.evaluated_severity === 'Normal' ? 'مستقر' : 'غير مستقر'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', margin: '24px 0' }}>
+                    <span style={{ fontSize: '64px', fontWeight: 900 }}>{latestVital.heart_rate || '--'}</span>
+                    <span style={{ fontSize: '18px', color: 'var(--text-muted)' }}>نبضة / دقيقة</span>
+                  </div>
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>المعدل الطبيعي: 60 - 100 نبضة</p>
+                </div>
+
+                {/* SpO2 Card */}
+                <div className={`vital-card glass-panel ${getOverallSeverity(latestVital.spo2 < 95 ? 'Emergency' : 'Normal')}`} style={{ padding: '30px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <TrendingUp size={28} style={{ color: 'var(--normal)' }} />
+                      <h3 style={{ fontSize: '20px' }}>نسبة الأكسجين بالدم</h3>
+                    </div>
+                    <span className={`severity-badge ${latestVital.spo2 >= 95 ? 'normal' : 'emergency'}`} style={{ fontSize: '12px', padding: '4px 10px' }}>
+                      {latestVital.spo2 >= 95 ? 'ممتاز' : 'منخفض'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', margin: '24px 0' }}>
+                    <span style={{ fontSize: '64px', fontWeight: 900 }}>{latestVital.spo2 || '--'}</span>
+                    <span style={{ fontSize: '18px', color: 'var(--text-muted)' }}>%</span>
+                  </div>
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>النسبة الطبيعية: 95% - 100%</p>
+                </div>
+
+                {/* Blood Pressure Card */}
+                <div className={`vital-card glass-panel ${getOverallSeverity(latestVital.systolic_bp >= 140 ? 'Emergency' : 'Normal')}`} style={{ padding: '30px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <Activity size={28} style={{ color: 'var(--normal)' }} />
+                      <h3 style={{ fontSize: '20px' }}>ضغط الدم</h3>
+                    </div>
+                    <span className={`severity-badge ${latestVital.systolic_bp < 140 ? 'normal' : 'emergency'}`} style={{ fontSize: '12px', padding: '4px 10px' }}>
+                      {latestVital.systolic_bp < 140 ? 'طبيعي' : 'مرتفع'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', margin: '24px 0' }}>
+                    <span style={{ fontSize: '64px', fontWeight: 900 }}>
+                      {latestVital.systolic_bp && latestVital.diastolic_bp ? `${latestVital.systolic_bp}/${latestVital.diastolic_bp}` : '--/--'}
+                    </span>
+                    <span style={{ fontSize: '18px', color: 'var(--text-muted)' }}>mmHg</span>
+                  </div>
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>الضغط المثالي: أقل من 120/80</p>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
+                <button 
+                  onClick={handleSOSPanic} 
+                  className="btn btn-danger" 
+                  style={{ padding: '16px 40px', fontSize: '18px', borderRadius: '12px', display: 'flex', gap: '10px', alignItems: 'center', boxShadow: '0 0 20px rgba(244, 63, 94, 0.4)' }}
+                >
+                  <AlertOctagon size={24} />
+                  <span>إرسال نداء استغاثة فوري (SOS)</span>
+                </button>
+              </div>
+              {vitalsSyncMsg && (
+                <div style={{ textAlign: 'center', fontSize: '14px', color: 'var(--normal)' }}>{vitalsSyncMsg}</div>
+              )}
+            </>
           )}
         </div>
       ) : (
@@ -1571,125 +2157,255 @@ function App() {
         // 4. FAMILY MEMBER VIEW (READ ONLY)
         // ==========================================
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '24px 0' }}>
-          <div style={{ padding: '16px 20px', background: 'rgba(99, 102, 241, 0.06)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '12px' }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><Eye size={18} style={{ color: 'var(--primary)' }} /> Secure Family Access Hub</h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '12px', marginTop: '4px' }}>
-              Monitoring relative: <strong>{user.details?.rel_first_name || 'Relative'} {user.details?.rel_last_name || 'Patient'}</strong> (Relationship: {user.details?.relationship}). Shared health statistics are strictly read-only per medical privacy regulations.
-            </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            <div className="glass-panel" style={{ display: 'inline-flex', padding: '4px', borderRadius: '10px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)' }}>
+              <button 
+                className={`auth-tab-btn ${viewMode === 'monitor' ? 'active' : ''}`}
+                onClick={() => setViewMode('monitor')}
+                style={{ padding: '8px 18px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, border: 0, cursor: 'pointer', transition: 'var(--transition-smooth)' }}
+              >
+                Patient Vital Monitor
+              </button>
+              <button 
+                className={`auth-tab-btn ${viewMode === 'profile' ? 'active' : ''}`}
+                onClick={() => setViewMode('profile')}
+                style={{ padding: '8px 18px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, border: 0, cursor: 'pointer', transition: 'var(--transition-smooth)' }}
+              >
+                Profile & Family Connection
+              </button>
+            </div>
           </div>
 
-          <section className="vitals-grid">
-            <div className={`vital-card glass-panel ${getOverallSeverity(latestVital.evaluated_severity)}`}>
-              <div className="vital-card-header">
-                <h3>Relative Heart Rate</h3>
-                <span className={`severity-badge ${getOverallSeverity(latestVital.evaluated_severity)}`}>
-                  {latestVital.evaluated_severity === 'Normal' ? 'Stable' : latestVital.evaluated_severity || 'Stable'}
-                </span>
-              </div>
-              <div className="vital-value-display">
-                <span className="vital-numeric">{latestVital.heart_rate || '--'}</span>
-                <span className="vital-unit">bpm</span>
-              </div>
-            </div>
-
-            <div className={`vital-card glass-panel ${getOverallSeverity(latestVital.spo2 < 95 ? 'Emergency' : 'Normal')}`}>
-              <div className="vital-card-header">
-                <h3>Relative Oxygen Level</h3>
-                <span className={`severity-badge ${latestVital.spo2 >= 95 ? 'normal' : 'emergency'}`}>
-                  {latestVital.spo2 >= 95 ? 'Normal' : 'Low SpO2'}
-                </span>
-              </div>
-              <div className="vital-value-display">
-                <span className="vital-numeric">{latestVital.spo2 || '--'}</span>
-                <span className="vital-unit">%</span>
-              </div>
-            </div>
-
-            <div className={`vital-card glass-panel ${getOverallSeverity(latestVital.systolic_bp >= 140 ? 'Emergency' : 'Normal')}`}>
-              <div className="vital-card-header">
-                <h3>Relative Blood Pressure</h3>
-                <span className={`severity-badge ${latestVital.systolic_bp < 140 ? 'normal' : 'emergency'}`}>
-                  {latestVital.systolic_bp < 140 ? 'Normal' : 'Abnormal'}
-                </span>
-              </div>
-              <div className="vital-value-display">
-                <span className="vital-numeric">
-                  {latestVital.systolic_bp && latestVital.diastolic_bp ? `${latestVital.systolic_bp}/${latestVital.diastolic_bp}` : '--/--'}
-                </span>
-                <span className="vital-unit">mmHg</span>
-              </div>
-            </div>
-          </section>
-
-          <section className="dashboard-content">
-            <div className="charts-panel glass-panel" style={{ gridColumn: 'span 2' }}>
-              <div className="panel-header">
-                <h2>Health History Graph</h2>
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Latest Wearable Sync Records</span>
-              </div>
-
-              {telemetryHistory.length === 0 ? (
-                <div className="no-data">No active telemetry packets recorded for this patient.</div>
-              ) : (
-                <div className="chart-wrapper">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={telemetryHistory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="colorHR" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.4}/>
-                          <stop offset="95%" stopColor="var(--primary)" stopOpacity={0}/>
-                        </linearGradient>
-                        <linearGradient id="colorSpO2" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="var(--normal)" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="var(--normal)" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                      <XAxis dataKey="measured_at" stroke="var(--text-muted)" fontSize={11} tickFormatter={(val) => val ? new Date(val).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''} />
-                      <YAxis domain={[50, 180]} stroke="var(--text-muted)" fontSize={11} />
-                      <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: 'var(--border-glass)', borderRadius: '8px' }} />
-                      <Area type="monotone" name="Heart Rate (bpm)" dataKey="heart_rate" stroke="var(--primary)" strokeWidth={2} fill="url(#colorHR)" />
-                      <Area type="monotone" name="Oxygen SpO2 (%)" dataKey="spo2" stroke="var(--normal)" strokeWidth={2} fill="url(#colorSpO2)" />
-                    </AreaChart>
-                  </ResponsiveContainer>
+          {viewMode === 'profile' ? (
+            <div className="charts-panel glass-panel" style={{ width: '100%', padding: '24px', animation: 'fadeIn 0.4s ease' }}>
+              <div className="panel-header" style={{ marginBottom: '24px' }}>
+                <div>
+                  <h2 style={{ fontSize: '20px', fontWeight: 800 }}>Family Settings & Monitored Patient Connection</h2>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Configure your credentials and link your profile to your relative's wearable ID</span>
                 </div>
-              )}
-            </div>
+              </div>
 
-            <div className="sidebar-panel">
-              <div className="alerts-panel glass-panel">
-                <div className="panel-header">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Bell size={18} color="var(--emergency)" />
-                    <h2>Warnings Feed (Read-Only)</h2>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', alignItems: 'start' }}>
+                {/* Credentials Card */}
+                <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', border: '1px solid var(--border-glass)' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '16px', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
+                    Family Guardian Credentials
+                  </h3>
+                  <form onSubmit={handleProfileUpdate} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Full Name</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        value={profileName} 
+                        onChange={e => setProfileName(e.target.value)} 
+                        required 
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Email Address</label>
+                      <input 
+                        type="email" 
+                        className="form-control" 
+                        value={profileEmail} 
+                        onChange={e => setProfileEmail(e.target.value)} 
+                        required 
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Relationship to Patient</label>
+                      <select 
+                        className="form-control" 
+                        value={profileRelationship} 
+                        onChange={e => setProfileRelationship(e.target.value)}
+                        style={{ background: 'var(--bg-glass)', color: 'var(--text-primary)' }}
+                        required
+                      >
+                        <option value="Son" style={{ background: '#0f172a' }}>Son</option>
+                        <option value="Daughter" style={{ background: '#0f172a' }}>Daughter</option>
+                        <option value="Spouse" style={{ background: '#0f172a' }}>Spouse</option>
+                        <option value="Parent" style={{ background: '#0f172a' }}>Parent</option>
+                        <option value="Guardian" style={{ background: '#0f172a' }}>Guardian</option>
+                        <option value="Other" style={{ background: '#0f172a' }}>Other</option>
+                      </select>
+                    </div>
+                    <button 
+                      type="submit" 
+                      className="btn btn-primary" 
+                      disabled={isUpdatingProfile}
+                      style={{ marginTop: '10px' }}
+                    >
+                      {isUpdatingProfile ? 'Saving Settings...' : 'Update Settings'}
+                    </button>
+                  </form>
+                </div>
+
+                {/* Patient Connection Board */}
+                <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', border: '1px solid var(--border-glass)' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '16px', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
+                    Monitored Relative Connection
+                  </h3>
+                  
+                  {user.details?.patient_id ? (
+                    <div className="glass-panel" style={{ padding: '14px', borderRadius: '8px', background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99,102,241,0.1)', marginBottom: '16px' }}>
+                      <h4 style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {user.details?.rel_first_name || 'Relative'} {user.details?.rel_last_name || 'Patient'}
+                      </h4>
+                      <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                        Relationship: <strong style={{ color: 'var(--primary)' }}>{user.details?.relationship}</strong>
+                      </p>
+                      <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        Patient ID / Connection Code: <code style={{ color: 'var(--primary)' }}>{user.details?.patient_id}</code>
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="glass-panel" style={{ padding: '14px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239,68,68,0.1)', marginBottom: '16px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      No relative is currently linked. Connect to a patient's smart wearable by choosing their name below.
+                    </div>
+                  )}
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Choose Organization Patient to Monitor</label>
+                    <select 
+                      className="form-control" 
+                      value={profilePatientId} 
+                      onChange={e => setProfilePatientId(e.target.value)}
+                      style={{ background: 'var(--bg-glass)', color: 'var(--text-primary)' }}
+                    >
+                      <option value="" style={{ background: '#0f172a' }}>-- Select Patient --</option>
+                      {allPatients.map(p => (
+                        <option key={p.id} value={p.id} style={{ background: '#0f172a' }}>
+                          {p.first_name} {p.last_name} (ID: {p.id.slice(0, 8)}...)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={{ padding: '16px 20px', background: 'rgba(99, 102, 241, 0.06)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '12px' }}>
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><Eye size={18} style={{ color: 'var(--primary)' }} /> Secure Family Access Hub</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '12px', marginTop: '4px' }}>
+                  Monitoring relative: <strong>{user.details?.rel_first_name || 'Relative'} {user.details?.rel_last_name || 'Patient'}</strong> (Relationship: {user.details?.relationship}). Shared health statistics are strictly read-only per medical privacy regulations.
+                </p>
+              </div>
+
+              <section className="vitals-grid">
+                <div className={`vital-card glass-panel ${getOverallSeverity(latestVital.evaluated_severity)}`}>
+                  <div className="vital-card-header">
+                    <h3>Relative Heart Rate</h3>
+                    <span className={`severity-badge ${getOverallSeverity(latestVital.evaluated_severity)}`}>
+                      {latestVital.evaluated_severity === 'Normal' ? 'Stable' : latestVital.evaluated_severity || 'Stable'}
+                    </span>
+                  </div>
+                  <div className="vital-value-display">
+                    <span className="vital-numeric">{latestVital.heart_rate || '--'}</span>
+                    <span className="vital-unit">bpm</span>
                   </div>
                 </div>
 
-                <div className="alert-list">
-                  {activeAlerts.length === 0 ? (
-                    <div className="no-data">All vitals are stable. No alerts recorded.</div>
+                <div className={`vital-card glass-panel ${getOverallSeverity(latestVital.spo2 < 95 ? 'Emergency' : 'Normal')}`}>
+                  <div className="vital-card-header">
+                    <h3>Relative Oxygen Level</h3>
+                    <span className={`severity-badge ${latestVital.spo2 >= 95 ? 'normal' : 'emergency'}`}>
+                      {latestVital.spo2 >= 95 ? 'Normal' : 'Low SpO2'}
+                    </span>
+                  </div>
+                  <div className="vital-value-display">
+                    <span className="vital-numeric">{latestVital.spo2 || '--'}</span>
+                    <span className="vital-unit">%</span>
+                  </div>
+                </div>
+
+                <div className={`vital-card glass-panel ${getOverallSeverity(latestVital.systolic_bp >= 140 ? 'Emergency' : 'Normal')}`}>
+                  <div className="vital-card-header">
+                    <h3>Relative Blood Pressure</h3>
+                    <span className={`severity-badge ${latestVital.systolic_bp < 140 ? 'normal' : 'emergency'}`}>
+                      {latestVital.systolic_bp < 140 ? 'Normal' : 'Abnormal'}
+                    </span>
+                  </div>
+                  <div className="vital-value-display">
+                    <span className="vital-numeric">
+                      {latestVital.systolic_bp && latestVital.diastolic_bp ? `${latestVital.systolic_bp}/${latestVital.diastolic_bp}` : '--/--'}
+                    </span>
+                    <span className="vital-unit">mmHg</span>
+                  </div>
+                </div>
+              </section>
+
+              <section className="dashboard-content">
+                <div className="charts-panel glass-panel" style={{ gridColumn: 'span 2' }}>
+                  <div className="panel-header">
+                    <h2>Health History Graph</h2>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Latest Wearable Sync Records</span>
+                  </div>
+
+                  {telemetryHistory.length === 0 ? (
+                    <div className="no-data">No active telemetry packets recorded for this patient.</div>
                   ) : (
-                    activeAlerts.map(alert => (
-                      <div key={alert.id} className={`alert-item ${alert.severity}`}>
-                        <div className="alert-icon-wrapper">
-                          <ShieldAlert size={18} />
-                        </div>
-                        <div className="alert-details">
-                          <p className="alert-message">{alert.message || `${alert.severity} status on ${alert.metric}: ${alert.value}`}</p>
-                          <div className="alert-meta">
-                            <span style={{ fontWeight: 700, color: 'var(--text-primary)', display: 'block', marginBottom: '3px' }}>
-                              Patient: {getPatientName(alert.patient_id || alert.patientId || '')}
-                            </span>
-                            <span>{new Date(alert.triggered_at).toLocaleTimeString()} • {alert.status}</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))
+                    <div className="chart-wrapper">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={telemetryHistory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="colorHR" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.4}/>
+                              <stop offset="95%" stopColor="var(--primary)" stopOpacity={0}/>
+                            </linearGradient>
+                            <linearGradient id="colorSpO2" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="var(--normal)" stopOpacity={0.3}/>
+                              <stop offset="95%" stopColor="var(--normal)" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                          <XAxis dataKey="measured_at" stroke="var(--text-muted)" fontSize={11} tickFormatter={(val) => val ? new Date(val).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''} />
+                          <YAxis domain={[50, 180]} stroke="var(--text-muted)" fontSize={11} />
+                          <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: 'var(--border-glass)', borderRadius: '8px' }} />
+                          <Area type="monotone" name="Heart Rate (bpm)" dataKey="heart_rate" stroke="var(--primary)" strokeWidth={2} fill="url(#colorHR)" />
+                          <Area type="monotone" name="Oxygen SpO2 (%)" dataKey="spo2" stroke="var(--normal)" strokeWidth={2} fill="url(#colorSpO2)" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
                   )}
                 </div>
-              </div>
-            </div>
-          </section>
+
+                <div className="sidebar-panel">
+                  <div className="alerts-panel glass-panel">
+                    <div className="panel-header">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Bell size={18} color="var(--emergency)" />
+                        <h2>Warnings Feed (Read-Only)</h2>
+                      </div>
+                    </div>
+
+                    <div className="alert-list">
+                      {activeAlerts.length === 0 ? (
+                        <div className="no-data">All vitals are stable. No alerts recorded.</div>
+                      ) : (
+                        activeAlerts.map(alert => (
+                          <div key={alert.id} className={`alert-item ${alert.severity}`}>
+                            <div className="alert-icon-wrapper">
+                              <ShieldAlert size={18} />
+                            </div>
+                            <div className="alert-details">
+                              <p className="alert-message">{alert.message || `${alert.severity} status on ${alert.metric}: ${alert.value}`}</p>
+                              <div className="alert-meta">
+                                <span style={{ fontWeight: 700, color: 'var(--text-primary)', display: 'block', marginBottom: '3px' }}>
+                                  Patient: {getPatientName(alert.patient_id || alert.patientId || '')}
+                                </span>
+                                <span>{new Date(alert.triggered_at).toLocaleTimeString()} • {alert.status}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </>
+          )}
         </div>
       )}
 
