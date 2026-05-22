@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS patients (
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     birth_date DATE NOT NULL,
+    subscription_tier ENUM('Free', 'Basic', 'Premium') NOT NULL DEFAULT 'Free',
     PRIMARY KEY (id),
     UNIQUE KEY uq_patient_user (user_id),
     CONSTRAINT fk_patients_user_id FOREIGN KEY (user_id) 

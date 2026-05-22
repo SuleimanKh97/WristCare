@@ -27,7 +27,12 @@ import {
   UserCheck,
   Eye,
   Sliders,
-  X
+  X,
+  Search,
+  Trash2,
+  Edit,
+  UserPlus,
+  Plus
 } from 'lucide-react';
 
 const API_BASE = 'http://localhost:3000';
@@ -109,6 +114,9 @@ function App() {
   // Real-Time Telemetry and Alarm states
   const [activeAlerts, setActiveAlerts] = useState<AlertItem[]>([]);
   const [telemetryHistory, setTelemetryHistory] = useState<VitalRecord[]>([]);
+  const [vitalRange, setVitalRange] = useState<string>('24h');
+  const [limitWarning, setLimitWarning] = useState<boolean>(false);
+  const [patientTier, setPatientTier] = useState<string>('Free');
 
 
   // Simulation forms states
@@ -127,6 +135,49 @@ function App() {
   const [selectedOrgSub, setSelectedOrgSub] = useState<OrganizationItem | null>(null);
   const [newSubStatus, setNewSubStatus] = useState('Active');
   const [newSubExpiry, setNewSubExpiry] = useState('');
+
+  // Super Admin CRUD Workspace States
+  const [adminTab, setAdminTab] = useState<'organizations' | 'clinicians' | 'patients' | 'family'>('organizations');
+  const [adminSearchQuery, setAdminSearchQuery] = useState('');
+  const [adminClinicians, setAdminClinicians] = useState<any[]>([]);
+  const [adminPatients, setAdminPatients] = useState<any[]>([]);
+  const [adminFamily, setAdminFamily] = useState<any[]>([]);
+  const [isAdminFetching, setIsAdminFetching] = useState(false);
+
+  // Clinician Form States
+  const [showClinicianModal, setShowClinicianModal] = useState(false);
+  const [editingClinician, setEditingClinician] = useState<any | null>(null);
+  const [clinEmail, setClinEmail] = useState('');
+  const [clinPassword, setClinPassword] = useState('');
+  const [clinName, setClinName] = useState('');
+  const [clinFirstName, setClinFirstName] = useState('');
+  const [clinLastName, setClinLastName] = useState('');
+  const [clinSpecialty, setClinSpecialty] = useState('General Practice');
+  const [clinOrgId, setClinOrgId] = useState('');
+
+  // Patient Form States
+  const [showPatientModal, setShowPatientModal] = useState(false);
+  const [editingPatient, setEditingPatient] = useState<any | null>(null);
+  const [patEmail, setPatEmail] = useState('');
+  const [patPassword, setPatPassword] = useState('');
+  const [patName, setPatName] = useState('');
+  const [patFirstName, setPatFirstName] = useState('');
+  const [patLastName, setPatLastName] = useState('');
+  const [patBirthDate, setPatBirthDate] = useState('');
+  const [patTier, setPatTier] = useState<'Free' | 'Basic' | 'Premium'>('Free');
+  const [patOrgId, setPatOrgId] = useState('');
+  const [patClinId, setPatClinId] = useState('');
+
+  // Family Form States
+  const [showFamilyModal, setShowFamilyModal] = useState(false);
+  const [editingFamily, setEditingFamily] = useState<any | null>(null);
+  const [famEmail, setFamEmail] = useState('');
+  const [famPassword, setFamPassword] = useState('');
+  const [famName, setFamName] = useState('');
+  const [famFirstName, setFamFirstName] = useState('');
+  const [famLastName, setFamLastName] = useState('');
+  const [famPatientId, setFamPatientId] = useState('');
+  const [famRelationship, setFamRelationship] = useState('Son');
 
   // Clinician patient directory
   const [clinicianPatients, setClinicianPatients] = useState<any[]>([
@@ -313,6 +364,193 @@ function App() {
     } finally {
       setIsUpdatingProfile(false);
     }
+  };
+
+  const updatePatientTier = async (newTier: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/profile/update`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ subscriptionTier: newTier })
+      });
+      if (res.ok) {
+        const result = await res.json();
+        if (result.success) {
+          setPatientTier(newTier);
+          if (user) {
+            const updatedUser = {
+              ...user,
+              details: {
+                ...user.details,
+                subscription_tier: newTier
+              }
+            };
+            setUser(updatedUser);
+            localStorage.setItem('wristcare_user', JSON.stringify(updatedUser));
+          }
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  };
+
+  const handlePlanUpgradeSelection = (targetTier: string) => {
+    if (targetTier === patientTier) {
+      Swal.fire({
+        icon: 'info',
+        title: 'الباقة النشطة',
+        text: 'أنت مشترك بالفعل في هذه الباقة حالياً.',
+        confirmButtonText: 'حسناً',
+        customClass: {
+          popup: 'swal-custom-popup',
+          title: 'swal-custom-title',
+          htmlContainer: 'swal-custom-html',
+          confirmButton: 'swal-custom-confirm-btn'
+        },
+        buttonsStyling: false
+      });
+      return;
+    }
+
+    if (targetTier === 'Free') {
+      Swal.fire({
+        title: 'تأكيد تغيير الباقة',
+        text: 'هل أنت متأكد من العودة إلى الباقة المجانية؟ قد تفقد بعض مزايا التخزين والربط العائلي.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'نعم، تغيير',
+        cancelButtonText: 'إلغاء',
+        customClass: {
+          popup: 'swal-custom-popup',
+          title: 'swal-custom-title',
+          htmlContainer: 'swal-custom-html',
+          confirmButton: 'swal-custom-confirm-btn',
+          cancelButton: 'swal-custom-cancel-btn'
+        },
+        buttonsStyling: false
+      }).then(async (result) => {
+        if (result.isConfirmed) {
+          const success = await updatePatientTier('Free');
+          if (success) {
+            Swal.fire({
+              icon: 'success',
+              title: 'تم التغيير بنجاح',
+              text: 'تم خفض الباقة إلى المجانية بنجاح.',
+              timer: 2000,
+              showConfirmButton: false,
+              customClass: {
+                popup: 'swal-custom-popup',
+                title: 'swal-custom-title',
+                htmlContainer: 'swal-custom-html'
+              }
+            });
+          }
+        }
+      });
+      return;
+    }
+
+    const price = targetTier === 'Basic' ? '5 دنانير' : '10 دنانير';
+
+    Swal.fire({
+      title: `بوابة الدفع الإلكتروني الموحدة • WristCare Billing`,
+      html: `
+        <div style="text-align: right; font-family: 'Segoe UI', sans-serif; color: white;">
+          <p style="margin-bottom: 12px; font-size: 14px; line-height: 1.5;">أنت بصدد الترقية إلى الباقة <strong>${targetTier === 'Basic' ? 'الأساسية (Basic)' : 'المميزة (Premium)'}</strong> بسعر <strong>${price} شهرياً</strong>.</p>
+          <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+            <div style="margin-bottom: 10px;">
+              <label style="font-size: 11px; color: #8b949e; display: block; margin-bottom: 4px;">رقم البطاقة الائتمانية (Mock Card Number)</label>
+              <input type="text" id="card-number" class="swal2-input" placeholder="4000 1234 5678 9010" style="margin: 0; width: 100%; box-sizing: border-box; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); color: white;" value="4000 1234 5678 9010">
+            </div>
+            <div style="display: flex; gap: 10px;">
+              <div style="flex: 1;">
+                <label style="font-size: 11px; color: #8b949e; display: block; margin-bottom: 4px;">تاريخ الانتهاء</label>
+                <input type="text" id="card-expiry" class="swal2-input" placeholder="MM/YY" style="margin: 0; width: 100%; box-sizing: border-box; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); color: white;" value="12/29">
+              </div>
+              <div style="flex: 1;">
+                <label style="font-size: 11px; color: #8b949e; display: block; margin-bottom: 4px;">رمز الأمان CVV</label>
+                <input type="password" id="card-cvv" class="swal2-input" placeholder="***" style="margin: 0; width: 100%; box-sizing: border-box; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); color: white;" value="123">
+              </div>
+            </div>
+          </div>
+          <p style="font-size: 11px; color: #8b949e; margin: 0; text-align: center;">🔒 نظام تشفير آمن 256-bit متوافق مع معايير PCI-DSS الطبية.</p>
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: 'إتمام عملية الدفع والاشتراك',
+      cancelButtonText: 'إلغاء',
+      customClass: {
+        popup: 'swal-custom-popup',
+        title: 'swal-custom-title',
+        htmlContainer: 'swal-custom-html',
+        confirmButton: 'swal-custom-confirm-btn',
+        cancelButton: 'swal-custom-cancel-btn'
+      },
+      buttonsStyling: false,
+      preConfirm: () => {
+        const number = (document.getElementById('card-number') as HTMLInputElement).value;
+        const expiry = (document.getElementById('card-expiry') as HTMLInputElement).value;
+        const cvv = (document.getElementById('card-cvv') as HTMLInputElement).value;
+        if (!number || !expiry || !cvv) {
+          Swal.showValidationMessage('يرجى ملء جميع الحقول المطلوبة للبطاقة الائتمانية');
+        }
+        return { number, expiry, cvv };
+      }
+    }).then((result) => {
+      if (result.isConfirmed) {
+        Swal.fire({
+          title: 'جاري معالجة الدفع...',
+          html: 'يتم الآن التواصل مع خوادم البنك المركزي الأردني لإتمام المعاملة المالية الآمنة.',
+          allowOutsideClick: false,
+          didOpen: () => {
+            Swal.showLoading();
+          },
+          customClass: {
+            popup: 'swal-custom-popup',
+            title: 'swal-custom-title',
+            htmlContainer: 'swal-custom-html'
+          }
+        });
+
+        setTimeout(async () => {
+          const success = await updatePatientTier(targetTier);
+          if (success) {
+            Swal.fire({
+              icon: 'success',
+              title: 'تهانينا! تم الاشتراك بنجاح 🎉',
+              text: `تم تفعيل الباقة ${targetTier === 'Basic' ? 'الأساسية (Basic)' : 'المميزة (Premium)'} بنجاح لشخصك الكريم.`,
+              timer: 3000,
+              showConfirmButton: false,
+              customClass: {
+                popup: 'swal-custom-popup',
+                title: 'swal-custom-title',
+                htmlContainer: 'swal-custom-html'
+              }
+            });
+          } else {
+            Swal.fire({
+              icon: 'error',
+              title: 'فشلت المعاملة',
+              text: 'لم نتمكن من تفعيل الاشتراك. يرجى التحقق من الاتصال بالشبكة أو تجربة بطاقة أخرى.',
+              customClass: {
+                popup: 'swal-custom-popup',
+                title: 'swal-custom-title',
+                htmlContainer: 'swal-custom-html',
+                confirmButton: 'swal-custom-confirm-btn'
+              },
+              buttonsStyling: false
+            });
+          }
+        }, 2000);
+      }
+    });
   };
 
   // Populate Dropdown Meta-data on token detection
@@ -565,6 +803,466 @@ function App() {
     }
   };
 
+  const fetchAdminClinicians = async () => {
+    try {
+      setIsAdminFetching(true);
+      const res = await fetch(`${API_BASE}/api/vitals/admin/clinicians`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAdminClinicians(data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsAdminFetching(false);
+    }
+  };
+
+  const fetchAdminPatients = async () => {
+    try {
+      setIsAdminFetching(true);
+      const res = await fetch(`${API_BASE}/api/vitals/admin/patients`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAdminPatients(data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsAdminFetching(false);
+    }
+  };
+
+  const fetchAdminFamily = async () => {
+    try {
+      setIsAdminFetching(true);
+      const res = await fetch(`${API_BASE}/api/vitals/admin/family`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAdminFamily(data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsAdminFetching(false);
+    }
+  };
+
+  // Trigger loading based on adminTab changes
+  useEffect(() => {
+    if (!token || !user || user.role !== 'super_admin') return;
+
+    if (adminTab === 'organizations') {
+      fetchAdminStats();
+    } else if (adminTab === 'clinicians') {
+      fetchAdminClinicians();
+      if (organizations.length === 0) fetchAdminStats();
+    } else if (adminTab === 'patients') {
+      fetchAdminPatients();
+      if (organizations.length === 0) fetchAdminStats();
+      if (adminClinicians.length === 0) fetchAdminClinicians();
+    } else if (adminTab === 'family') {
+      fetchAdminFamily();
+      if (adminPatients.length === 0) fetchAdminPatients();
+    }
+  }, [token, user, adminTab]);
+
+  // ==========================================
+  // SUPER ADMIN CRUD API SUBMISSION HANDLERS
+  // ==========================================
+
+  // --- Clinician CRUD Submit ---
+  const handleClinicianSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const url = editingClinician 
+        ? `${API_BASE}/api/vitals/admin/clinicians/${editingClinician.id}` 
+        : `${API_BASE}/api/vitals/admin/clinicians`;
+      const method = editingClinician ? 'PUT' : 'POST';
+
+      const body = {
+        email: clinEmail,
+        password: clinPassword,
+        name: clinName,
+        firstName: clinFirstName,
+        lastName: clinLastName,
+        specialty: clinSpecialty,
+        organizationId: clinOrgId
+      };
+
+      const res = await fetch(url, {
+        method,
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify(body)
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        Swal.fire({
+          icon: 'success',
+          title: editingClinician ? 'تم تحديث الطبيب بنجاح!' : 'تم إضافة الطبيب بنجاح!',
+          text: data.message || 'تم تحديث قاعدة البيانات.',
+          customClass: {
+            popup: 'swal-custom-popup',
+            title: 'swal-custom-title',
+            htmlContainer: 'swal-custom-html',
+            confirmButton: 'swal-custom-confirm-btn'
+          }
+        });
+        setShowClinicianModal(false);
+        setEditingClinician(null);
+        setClinEmail('');
+        setClinPassword('');
+        setClinName('');
+        setClinFirstName('');
+        setClinLastName('');
+        setClinSpecialty('General Practice');
+        setClinOrgId('');
+        fetchAdminClinicians();
+        fetchAdminStats();
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'خطأ في العملية',
+          text: data.error || 'يرجى التحقق من المدخلات.',
+          customClass: {
+            popup: 'swal-custom-popup',
+            title: 'swal-custom-title',
+            htmlContainer: 'swal-custom-html',
+            confirmButton: 'swal-custom-confirm-btn'
+          }
+        });
+      }
+    } catch (err: any) {
+      console.error(err);
+    }
+  };
+
+  // --- Clinician Delete ---
+  const handleDeleteClinician = async (clinicianId: string, name: string) => {
+    Swal.fire({
+      title: 'هل أنت متأكد؟',
+      text: `سيتم حذف حساب الطبيب ${name} بالكامل من النظام!`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'نعم، احذف الطبيب',
+      cancelButtonText: 'إلغاء',
+      customClass: {
+        popup: 'swal-custom-popup',
+        title: 'swal-custom-title',
+        htmlContainer: 'swal-custom-html',
+        confirmButton: 'swal-custom-confirm-btn',
+        cancelButton: 'swal-custom-cancel-btn'
+      }
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          const res = await fetch(`${API_BASE}/api/vitals/admin/clinicians/${clinicianId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (res.ok) {
+            Swal.fire({
+              icon: 'success',
+              title: 'تم الحذف!',
+              text: data.message || 'تم حذف الطبيب بنجاح.',
+              customClass: {
+                popup: 'swal-custom-popup',
+                title: 'swal-custom-title',
+                htmlContainer: 'swal-custom-html',
+                confirmButton: 'swal-custom-confirm-btn'
+              }
+            });
+            fetchAdminClinicians();
+            fetchAdminStats();
+          } else {
+            Swal.fire({
+              icon: 'error',
+              title: 'فشل الحذف',
+              text: data.error || 'حدث خطأ أثناء محاولة الحذف.',
+              customClass: {
+                popup: 'swal-custom-popup',
+                title: 'swal-custom-title',
+                htmlContainer: 'swal-custom-html',
+                confirmButton: 'swal-custom-confirm-btn'
+              }
+            });
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }
+    });
+  };
+
+  // --- Patient CRUD Submit ---
+  const handlePatientSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const url = editingPatient 
+        ? `${API_BASE}/api/vitals/admin/patients/${editingPatient.id}` 
+        : `${API_BASE}/api/vitals/admin/patients`;
+      const method = editingPatient ? 'PUT' : 'POST';
+
+      const body = {
+        email: patEmail,
+        password: patPassword,
+        name: patName,
+        firstName: patFirstName,
+        lastName: patLastName,
+        birthDate: patBirthDate,
+        subscriptionTier: patTier,
+        organizationId: patOrgId,
+        primaryClinicianId: patClinId || null
+      };
+
+      const res = await fetch(url, {
+        method,
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify(body)
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        Swal.fire({
+          icon: 'success',
+          title: editingPatient ? 'تم تحديث المريض بنجاح!' : 'تم إضافة المريض بنجاح!',
+          text: data.message || 'تم حفظ التغييرات.',
+          customClass: {
+            popup: 'swal-custom-popup',
+            title: 'swal-custom-title',
+            htmlContainer: 'swal-custom-html',
+            confirmButton: 'swal-custom-confirm-btn'
+          }
+        });
+        setShowPatientModal(false);
+        setEditingPatient(null);
+        setPatEmail('');
+        setPatPassword('');
+        setPatName('');
+        setPatFirstName('');
+        setPatLastName('');
+        setPatBirthDate('');
+        setPatTier('Free');
+        setPatOrgId('');
+        setPatClinId('');
+        fetchAdminPatients();
+        fetchAdminStats();
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'خطأ في العملية',
+          text: data.error || 'يرجى التحقق من المدخلات.',
+          customClass: {
+            popup: 'swal-custom-popup',
+            title: 'swal-custom-title',
+            htmlContainer: 'swal-custom-html',
+            confirmButton: 'swal-custom-confirm-btn'
+          }
+        });
+      }
+    } catch (err: any) {
+      console.error(err);
+    }
+  };
+
+  // --- Patient Delete ---
+  const handleDeletePatient = async (patientId: string, name: string) => {
+    Swal.fire({
+      title: 'هل أنت متأكد؟',
+      text: `سيتم حذف المريض ${name} وجميع علاماته الحيوية وتنبيهاته والروابط العائلية المرتبطة به!`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'نعم، احذف المريض',
+      cancelButtonText: 'إلغاء',
+      customClass: {
+        popup: 'swal-custom-popup',
+        title: 'swal-custom-title',
+        htmlContainer: 'swal-custom-html',
+        confirmButton: 'swal-custom-confirm-btn',
+        cancelButton: 'swal-custom-cancel-btn'
+      }
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          const res = await fetch(`${API_BASE}/api/vitals/admin/patients/${patientId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (res.ok) {
+            Swal.fire({
+              icon: 'success',
+              title: 'تم الحذف!',
+              text: data.message || 'تم حذف المريض وتصفية سجلاته بنجاح.',
+              customClass: {
+                popup: 'swal-custom-popup',
+                title: 'swal-custom-title',
+                htmlContainer: 'swal-custom-html',
+                confirmButton: 'swal-custom-confirm-btn'
+              }
+            });
+            fetchAdminPatients();
+            fetchAdminStats();
+          } else {
+            Swal.fire({
+              icon: 'error',
+              title: 'فشل الحذف',
+              text: data.error || 'حدث خطأ أثناء محاولة الحذف.',
+              customClass: {
+                popup: 'swal-custom-popup',
+                title: 'swal-custom-title',
+                htmlContainer: 'swal-custom-html',
+                confirmButton: 'swal-custom-confirm-btn'
+              }
+            });
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }
+    });
+  };
+
+  // --- Family Member CRUD Submit ---
+  const handleFamilySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const url = editingFamily 
+        ? `${API_BASE}/api/vitals/admin/family/${editingFamily.id}` 
+        : `${API_BASE}/api/vitals/admin/family`;
+      const method = editingFamily ? 'PUT' : 'POST';
+
+      const body = {
+        email: famEmail,
+        password: famPassword,
+        name: famName,
+        firstName: famFirstName,
+        lastName: famLastName,
+        patientId: famPatientId,
+        relationship: famRelationship
+      };
+
+      const res = await fetch(url, {
+        method,
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify(body)
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        Swal.fire({
+          icon: 'success',
+          title: editingFamily ? 'تم التحديث بنجاح!' : 'تم إضافة المرافق بنجاح!',
+          text: data.message || 'تم حفظ التغييرات.',
+          customClass: {
+            popup: 'swal-custom-popup',
+            title: 'swal-custom-title',
+            htmlContainer: 'swal-custom-html',
+            confirmButton: 'swal-custom-confirm-btn'
+          }
+        });
+        setShowFamilyModal(false);
+        setEditingFamily(null);
+        setFamEmail('');
+        setFamPassword('');
+        setFamName('');
+        setFamFirstName('');
+        setFamLastName('');
+        setFamPatientId('');
+        setFamRelationship('Son');
+        fetchAdminFamily();
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'خطأ في العملية',
+          text: data.error || 'يرجى التحقق من المدخلات.',
+          customClass: {
+            popup: 'swal-custom-popup',
+            title: 'swal-custom-title',
+            htmlContainer: 'swal-custom-html',
+            confirmButton: 'swal-custom-confirm-btn'
+          }
+        });
+      }
+    } catch (err: any) {
+      console.error(err);
+    }
+  };
+
+  // --- Family Member Delete ---
+  const handleDeleteFamily = async (familyId: string, name: string) => {
+    Swal.fire({
+      title: 'هل أنت متأكد؟',
+      text: `سيتم إلغاء حساب العائلة الخاص بـ ${name} بالكامل!`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'نعم، احذف الحساب',
+      cancelButtonText: 'إلغاء',
+      customClass: {
+        popup: 'swal-custom-popup',
+        title: 'swal-custom-title',
+        htmlContainer: 'swal-custom-html',
+        confirmButton: 'swal-custom-confirm-btn',
+        cancelButton: 'swal-custom-cancel-btn'
+      }
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          const res = await fetch(`${API_BASE}/api/vitals/admin/family/${familyId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (res.ok) {
+            Swal.fire({
+              icon: 'success',
+              title: 'تم الحذف!',
+              text: data.message || 'تم حذف مرافق العائلة بنجاح.',
+              customClass: {
+                popup: 'swal-custom-popup',
+                title: 'swal-custom-title',
+                htmlContainer: 'swal-custom-html',
+                confirmButton: 'swal-custom-confirm-btn'
+              }
+            });
+            fetchAdminFamily();
+          } else {
+            Swal.fire({
+              icon: 'error',
+              title: 'فشل الحذف',
+              text: data.error || 'حدث خطأ أثناء محاولة الحذف.',
+              customClass: {
+                popup: 'swal-custom-popup',
+                title: 'swal-custom-title',
+                htmlContainer: 'swal-custom-html',
+                confirmButton: 'swal-custom-confirm-btn'
+              }
+            });
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }
+    });
+  };
+
   const fetchClinicianData = async () => {
     try {
       // Fetch clinic patients from DB
@@ -610,15 +1308,23 @@ function App() {
     }
   };
 
-  const fetchPatientVitals = async (pId: string) => {
+  const fetchPatientVitals = async (pId: string, rangeOverride?: string) => {
     if (!pId) return;
+    const rangeParam = rangeOverride || vitalRange;
     try {
-      const res = await fetch(`${API_BASE}/api/vitals/${pId}`, {
+      const res = await fetch(`${API_BASE}/api/vitals/${pId}?range=${rangeParam}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
         const data = await res.json();
-        setTelemetryHistory(data.reverse());
+        if (Array.isArray(data)) {
+          setTelemetryHistory(data.reverse());
+          setLimitWarning(false);
+        } else {
+          setTelemetryHistory((data.telemetry || []).reverse());
+          setLimitWarning(!!data.limitWarning);
+          setPatientTier(data.tier || 'Free');
+        }
       }
       
       // Also fetch alerts for this patient
@@ -631,6 +1337,14 @@ function App() {
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleRangeChange = (newRange: string) => {
+    setVitalRange(newRange);
+    const pId = selectedPatientId || (user?.role === 'patient' ? user?.details?.id : null);
+    if (pId) {
+      fetchPatientVitals(pId, newRange);
     }
   };
 
@@ -1138,6 +1852,41 @@ function App() {
                   Role: {user.role?.replace('_', ' ')}
                 </div>
               </div>
+              
+              {/* Plan Badge for Patients / Family */}
+              {(user.role === 'patient' || user.role === 'family') && (
+                <div className="plan-badge-glass" style={{
+                  padding: '4px 10px',
+                  background: patientTier === 'Premium' 
+                    ? 'linear-gradient(135deg, rgba(210, 153, 34, 0.15) 0%, rgba(241, 224, 90, 0.15) 100%)' 
+                    : patientTier === 'Basic' 
+                    ? 'linear-gradient(135deg, rgba(56, 139, 253, 0.15) 0%, rgba(56, 139, 253, 0.05) 100%)' 
+                    : 'linear-gradient(135deg, rgba(139, 148, 158, 0.1) 0%, rgba(139, 148, 158, 0.03) 100%)',
+                  border: patientTier === 'Premium' 
+                    ? '1px solid rgba(210, 153, 34, 0.35)' 
+                    : patientTier === 'Basic' 
+                    ? '1px solid rgba(56, 139, 253, 0.35)' 
+                    : '1px solid rgba(139, 148, 158, 0.18)',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  color: patientTier === 'Premium' ? '#f1e05a' : patientTier === 'Basic' ? '#58a6ff' : '#8b949e',
+                  backdropFilter: 'blur(8px)',
+                }}>
+                  <span style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    backgroundColor: patientTier === 'Premium' ? '#d29922' : patientTier === 'Basic' ? '#388bfd' : '#8b949e',
+                    boxShadow: `0 0 6px ${patientTier === 'Premium' ? '#d29922' : patientTier === 'Basic' ? '#388bfd' : '#8b949e'}`
+                  }} />
+                  <span>{patientTier.toUpperCase()}</span>
+                </div>
+              )}
+
               <button 
                 onClick={handleLogout}
                 title="Sign out of panel"
@@ -1175,6 +1924,7 @@ function App() {
         // 1. SUPER ADMIN VIEW
         // ==========================================
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '24px 0' }}>
+          {/* STATS TILES */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px' }}>
             <div className="vital-card glass-panel normal">
               <h4 style={{ color: 'var(--text-muted)', fontSize: '12px', textTransform: 'uppercase' }}>Registered Organizations</h4>
@@ -1184,91 +1934,462 @@ function App() {
               </div>
             </div>
             <div className="vital-card glass-panel normal">
-              <h4 style={{ color: 'var(--text-muted)', fontSize: '12px', textTransform: 'uppercase' }}>Active Clinicians Directory</h4>
+              <h4 style={{ color: 'var(--text-muted)', fontSize: '12px', textTransform: 'uppercase' }}>Doctors (Clinicians)</h4>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '10px' }}>
                 <UserCheck size={24} style={{ color: 'var(--normal)' }} />
                 <span style={{ fontSize: '32px', fontWeight: 800 }}>
-                  {organizations.reduce((acc, o) => acc + Number(o.clinician_count), 0)}
+                  {adminClinicians.length || organizations.reduce((acc, o) => acc + Number(o.clinician_count), 0)}
                 </span>
               </div>
             </div>
             <div className="vital-card glass-panel normal">
-              <h4 style={{ color: 'var(--text-muted)', fontSize: '12px', textTransform: 'uppercase' }}>Total Patients Enrolled</h4>
+              <h4 style={{ color: 'var(--text-muted)', fontSize: '12px', textTransform: 'uppercase' }}>Enrolled Patients</h4>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '10px' }}>
                 <Activity size={24} style={{ color: 'var(--primary)' }} />
                 <span style={{ fontSize: '32px', fontWeight: 800 }}>
-                  {organizations.reduce((acc, o) => acc + Number(o.patient_count), 0)}
+                  {adminPatients.length || organizations.reduce((acc, o) => acc + Number(o.patient_count), 0)}
                 </span>
+              </div>
+            </div>
+            <div className="vital-card glass-panel normal">
+              <h4 style={{ color: 'var(--text-muted)', fontSize: '12px', textTransform: 'uppercase' }}>Family Guardians</h4>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '10px' }}>
+                <User size={24} style={{ color: 'var(--high)' }} />
+                <span style={{ fontSize: '32px', fontWeight: 800 }}>{adminFamily.length}</span>
               </div>
             </div>
           </div>
 
+          {/* WORKSPACE NAV TABS */}
+          <div className="glass-panel" style={{ padding: '6px', borderRadius: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap', width: 'fit-content' }}>
+            <button 
+              className={`auth-tab-btn ${adminTab === 'organizations' ? 'active' : ''}`}
+              onClick={() => { setAdminTab('organizations'); setAdminSearchQuery(''); }}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '8px', border: 0, cursor: 'pointer', transition: 'var(--transition-smooth)' }}
+            >
+              <Building size={16} />
+              Clinics & Billing
+            </button>
+            <button 
+              className={`auth-tab-btn ${adminTab === 'clinicians' ? 'active' : ''}`}
+              onClick={() => { setAdminTab('clinicians'); setAdminSearchQuery(''); }}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '8px', border: 0, cursor: 'pointer', transition: 'var(--transition-smooth)' }}
+            >
+              <UserCheck size={16} />
+              Doctors (Clinicians)
+            </button>
+            <button 
+              className={`auth-tab-btn ${adminTab === 'patients' ? 'active' : ''}`}
+              onClick={() => { setAdminTab('patients'); setAdminSearchQuery(''); }}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '8px', border: 0, cursor: 'pointer', transition: 'var(--transition-smooth)' }}
+            >
+              <Activity size={16} />
+              Patients
+            </button>
+            <button 
+              className={`auth-tab-btn ${adminTab === 'family' ? 'active' : ''}`}
+              onClick={() => { setAdminTab('family'); setAdminSearchQuery(''); }}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '8px', border: 0, cursor: 'pointer', transition: 'var(--transition-smooth)' }}
+            >
+              <User size={16} />
+              Family Guardians
+            </button>
+          </div>
+
+          {/* MAIN MANAGEMENT CONSOLE */}
           <div className="charts-panel glass-panel" style={{ width: '100%' }}>
-            <div className="panel-header">
-              <h2>Hospital Registry & Subscription Billing Manager</h2>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Tenant Status Overview Console</span>
+            {/* SEARCH AND ADD ACTION HEADER */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap', padding: '16px 20px', borderBottom: '1px solid var(--border-glass)' }}>
+              <div style={{ position: 'relative', flex: 1, maxWidth: '380px', minWidth: '240px' }}>
+                <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input 
+                  type="text" 
+                  placeholder={`Search registry directories...`} 
+                  className="form-control" 
+                  style={{ paddingLeft: '38px', width: '100%', height: '40px', fontSize: '13px' }}
+                  value={adminSearchQuery}
+                  onChange={e => setAdminSearchQuery(e.target.value)}
+                />
+              </div>
+
+              {adminTab !== 'organizations' && (
+                <button 
+                  className="btn btn-primary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 18px', borderRadius: '10px', fontSize: '13px', fontWeight: 600 }}
+                  onClick={() => {
+                    if (adminTab === 'clinicians') {
+                      setEditingClinician(null);
+                      setClinEmail('');
+                      setClinPassword('');
+                      setClinName('');
+                      setClinFirstName('');
+                      setClinLastName('');
+                      setClinSpecialty('General Practice');
+                      setClinOrgId(organizations[0]?.id || '');
+                      setShowClinicianModal(true);
+                    } else if (adminTab === 'patients') {
+                      setEditingPatient(null);
+                      setPatEmail('');
+                      setPatPassword('');
+                      setPatName('');
+                      setPatFirstName('');
+                      setPatLastName('');
+                      setPatBirthDate('');
+                      setPatTier('Free');
+                      setPatOrgId(organizations[0]?.id || '');
+                      setPatClinId('');
+                      setShowPatientModal(true);
+                    } else if (adminTab === 'family') {
+                      setEditingFamily(null);
+                      setFamEmail('');
+                      setFamPassword('');
+                      setFamName('');
+                      setFamFirstName('');
+                      setFamLastName('');
+                      setFamPatientId(adminPatients[0]?.id || '');
+                      setFamRelationship('Son');
+                      setShowFamilyModal(true);
+                    }
+                  }}
+                >
+                  <Plus size={16} />
+                  {adminTab === 'clinicians' && 'Add Doctor'}
+                  {adminTab === 'patients' && 'Add Patient'}
+                  {adminTab === 'family' && 'Add Guardian'}
+                </button>
+              )}
             </div>
 
-            <div style={{ overflowX: 'auto', marginTop: '15px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border-glass)', color: 'var(--text-muted)' }}>
-                    <th style={{ padding: '12px' }}>Organization / Clinic</th>
-                    <th style={{ padding: '12px' }}>License Number</th>
-                    <th style={{ padding: '12px' }}>Enrolled Patients</th>
-                    <th style={{ padding: '12px' }}>Clinicians Staff</th>
-                    <th style={{ padding: '12px' }}>Subscription Status</th>
-                    <th style={{ padding: '12px' }}>Expiry Date</th>
-                    <th style={{ padding: '12px' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {organizations.map(org => (
-                    <tr key={org.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                      <td style={{ padding: '12px', fontWeight: 700 }}>{org.name}</td>
-                      <td style={{ padding: '12px', color: 'var(--text-muted)' }}>{org.license_number}</td>
-                      <td style={{ padding: '12px' }}>{org.patient_count}</td>
-                      <td style={{ padding: '12px' }}>{org.clinician_count}</td>
-                      <td style={{ padding: '12px' }}>
-                        <span style={{ 
-                          padding: '3px 8px', 
-                          borderRadius: '12px', 
-                          fontSize: '11px', 
-                          fontWeight: 700,
-                          background: org.sub_status === 'Active' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(244, 63, 94, 0.1)',
-                          color: org.sub_status === 'Active' ? 'var(--normal)' : 'var(--emergency)'
-                        }}>
-                          {org.sub_status || 'Active'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px', color: 'var(--text-muted)' }}>
-                        {org.expires_at ? new Date(org.expires_at).toLocaleDateString() : 'N/A'}
-                      </td>
-                      <td style={{ padding: '12px' }}>
-                        <button 
-                          className="btn-ack" 
-                          onClick={() => {
-                            setSelectedOrgSub(org);
-                            setNewSubStatus(org.sub_status || 'Active');
-                            setNewSubExpiry(org.expires_at ? new Date(org.expires_at).toISOString().split('T')[0] : '');
-                          }}
-                          style={{ padding: '4px 8px', fontSize: '11px' }}
-                        >
-                          Configure Billing
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {/* TAB-SPECIFIC DIRECTORIES */}
+            <div style={{ overflowX: 'auto', padding: '10px 20px 20px' }}>
+              {isAdminFetching ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
+                  <span className="status-indicator-dot live" style={{ display: 'inline-block', marginRight: '8px' }}></span>
+                  Loading directory records...
+                </div>
+              ) : (
+                <>
+                  {/* T1. ORGANIZATIONS TAB */}
+                  {adminTab === 'organizations' && (() => {
+                    const filtered = organizations.filter(org => 
+                      org.name.toLowerCase().includes(adminSearchQuery.toLowerCase()) ||
+                      (org.license_number && org.license_number.toLowerCase().includes(adminSearchQuery.toLowerCase()))
+                    );
+
+                    return (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--border-glass)', color: 'var(--text-muted)' }}>
+                            <th style={{ padding: '12px' }}>Organization / Clinic</th>
+                            <th style={{ padding: '12px' }}>License Number</th>
+                            <th style={{ padding: '12px' }}>Enrolled Patients</th>
+                            <th style={{ padding: '12px' }}>Clinicians Staff</th>
+                            <th style={{ padding: '12px' }}>Subscription Status</th>
+                            <th style={{ padding: '12px' }}>Expiry Date</th>
+                            <th style={{ padding: '12px', textAlign: 'right' }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filtered.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>No matching organizations found.</td>
+                            </tr>
+                          ) : (
+                            filtered.map(org => (
+                              <tr key={org.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>{org.name}</td>
+                                <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>{org.license_number}</td>
+                                <td style={{ padding: '12px' }}>{org.patient_count}</td>
+                                <td style={{ padding: '12px' }}>{org.clinician_count}</td>
+                                <td style={{ padding: '12px' }}>
+                                  <span style={{ 
+                                    padding: '3px 8px', 
+                                    borderRadius: '12px', 
+                                    fontSize: '11px', 
+                                    fontWeight: 700,
+                                    background: org.sub_status === 'Active' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(244, 63, 94, 0.1)',
+                                    color: org.sub_status === 'Active' ? 'var(--normal)' : 'var(--emergency)'
+                                  }}>
+                                    {org.sub_status || 'Active'}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '12px', color: 'var(--text-muted)' }}>
+                                  {org.expires_at ? new Date(org.expires_at).toLocaleDateString() : 'N/A'}
+                                </td>
+                                <td style={{ padding: '12px', textAlign: 'right' }}>
+                                  <button 
+                                    className="btn-ack" 
+                                    onClick={() => {
+                                      setSelectedOrgSub(org);
+                                      setNewSubStatus(org.sub_status || 'Active');
+                                      setNewSubExpiry(org.expires_at ? new Date(org.expires_at).toISOString().split('T')[0] : '');
+                                    }}
+                                    style={{ padding: '4px 8px', fontSize: '11px' }}
+                                  >
+                                    Configure Billing
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    );
+                  })()}
+
+                  {/* T2. CLINICIANS TAB */}
+                  {adminTab === 'clinicians' && (() => {
+                    const filtered = adminClinicians.filter(clin => 
+                      clin.name.toLowerCase().includes(adminSearchQuery.toLowerCase()) ||
+                      clin.email.toLowerCase().includes(adminSearchQuery.toLowerCase()) ||
+                      (clin.specialty && clin.specialty.toLowerCase().includes(adminSearchQuery.toLowerCase())) ||
+                      (clin.organization_name && clin.organization_name.toLowerCase().includes(adminSearchQuery.toLowerCase()))
+                    );
+
+                    return (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--border-glass)', color: 'var(--text-muted)' }}>
+                            <th style={{ padding: '12px' }}>Doctor Name</th>
+                            <th style={{ padding: '12px' }}>Email Address</th>
+                            <th style={{ padding: '12px' }}>Specialty</th>
+                            <th style={{ padding: '12px' }}>Associated Clinic</th>
+                            <th style={{ padding: '12px', textAlign: 'right' }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filtered.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>No doctors match the search criteria.</td>
+                            </tr>
+                          ) : (
+                            filtered.map(clin => (
+                              <tr key={clin.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>{clin.name}</td>
+                                <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>{clin.email}</td>
+                                <td style={{ padding: '12px' }}>
+                                  <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', fontSize: '11px', color: 'var(--text-primary)' }}>
+                                    {clin.specialty}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>{clin.organization_name}</td>
+                                <td style={{ padding: '12px', textAlign: 'right' }}>
+                                  <div style={{ display: 'inline-flex', gap: '8px' }}>
+                                    <button 
+                                      className="btn-ack" 
+                                      onClick={() => {
+                                        setEditingClinician(clin);
+                                        setClinEmail(clin.email);
+                                        setClinPassword('');
+                                        setClinName(clin.name);
+                                        setClinFirstName(clin.first_name || '');
+                                        setClinLastName(clin.last_name || '');
+                                        setClinSpecialty(clin.specialty || 'General Practice');
+                                        setClinOrgId(clin.organization_id || '');
+                                        setShowClinicianModal(true);
+                                      }}
+                                      style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    >
+                                      <Edit size={12} /> Edit
+                                    </button>
+                                    <button 
+                                      className="btn-ack" 
+                                      onClick={() => handleDeleteClinician(clin.id, clin.name)}
+                                      style={{ padding: '4px 8px', fontSize: '11px', background: 'rgba(244, 63, 94, 0.1)', color: 'var(--emergency)', borderColor: 'rgba(244, 63, 94, 0.2)', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    >
+                                      <Trash2 size={12} /> Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    );
+                  })()}
+
+                  {/* T3. PATIENTS TAB */}
+                  {adminTab === 'patients' && (() => {
+                    const filtered = adminPatients.filter(pat => 
+                      pat.name.toLowerCase().includes(adminSearchQuery.toLowerCase()) ||
+                      pat.email.toLowerCase().includes(adminSearchQuery.toLowerCase()) ||
+                      (pat.subscription_tier && pat.subscription_tier.toLowerCase().includes(adminSearchQuery.toLowerCase())) ||
+                      (pat.organization_name && pat.organization_name.toLowerCase().includes(adminSearchQuery.toLowerCase())) ||
+                      (pat.primary_clinician_name && pat.primary_clinician_name.toLowerCase().includes(adminSearchQuery.toLowerCase()))
+                    );
+
+                    return (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--border-glass)', color: 'var(--text-muted)' }}>
+                            <th style={{ padding: '12px' }}>Patient Name</th>
+                            <th style={{ padding: '12px' }}>Email Address</th>
+                            <th style={{ padding: '12px' }}>Date of Birth</th>
+                            <th style={{ padding: '12px' }}>Subscription</th>
+                            <th style={{ padding: '12px' }}>Clinic</th>
+                            <th style={{ padding: '12px' }}>Primary Doctor</th>
+                            <th style={{ padding: '12px', textAlign: 'right' }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filtered.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>No patients match the search criteria.</td>
+                            </tr>
+                          ) : (
+                            filtered.map(pat => (
+                              <tr key={pat.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>{pat.name}</td>
+                                <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>{pat.email}</td>
+                                <td style={{ padding: '12px', color: 'var(--text-muted)' }}>
+                                  {pat.birth_date ? new Date(pat.birth_date).toLocaleDateString() : 'N/A'}
+                                </td>
+                                <td style={{ padding: '12px' }}>
+                                  <span style={{ 
+                                    padding: '2px 6px', 
+                                    borderRadius: '8px', 
+                                    fontSize: '11px', 
+                                    fontWeight: 700,
+                                    background: pat.subscription_tier === 'Premium' ? 'rgba(99, 102, 241, 0.15)' : pat.subscription_tier === 'Basic' ? 'rgba(251, 191, 36, 0.12)' : 'rgba(255,255,255,0.05)',
+                                    color: pat.subscription_tier === 'Premium' ? 'var(--primary)' : pat.subscription_tier === 'Basic' ? 'var(--medium)' : 'var(--text-secondary)'
+                                  }}>
+                                    {pat.subscription_tier || 'Free'}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>{pat.organization_name}</td>
+                                <td style={{ padding: '12px' }}>
+                                  {pat.primary_clinician_name ? (
+                                    <span style={{ color: 'var(--normal)', fontWeight: 600 }}>{pat.primary_clinician_name}</span>
+                                  ) : (
+                                    <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>None</span>
+                                  )}
+                                </td>
+                                <td style={{ padding: '12px', textAlign: 'right' }}>
+                                  <div style={{ display: 'inline-flex', gap: '8px' }}>
+                                    <button 
+                                      className="btn-ack" 
+                                      onClick={() => {
+                                        setEditingPatient(pat);
+                                        setPatEmail(pat.email);
+                                        setPatPassword('');
+                                        setPatName(pat.name);
+                                        setPatFirstName(pat.first_name || '');
+                                        setPatLastName(pat.last_name || '');
+                                        const dob = pat.birth_date ? new Date(pat.birth_date).toISOString().split('T')[0] : '';
+                                        setPatBirthDate(dob);
+                                        setPatTier(pat.subscription_tier || 'Free');
+                                        setPatOrgId(pat.organization_id || '');
+                                        setPatClinId(pat.primary_clinician_id || '');
+                                        setShowPatientModal(true);
+                                      }}
+                                      style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    >
+                                      <Edit size={12} /> Edit
+                                    </button>
+                                    <button 
+                                      className="btn-ack" 
+                                      onClick={() => handleDeletePatient(pat.id, pat.name)}
+                                      style={{ padding: '4px 8px', fontSize: '11px', background: 'rgba(244, 63, 94, 0.1)', color: 'var(--emergency)', borderColor: 'rgba(244, 63, 94, 0.2)', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    >
+                                      <Trash2 size={12} /> Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    );
+                  })()}
+
+                  {/* T4. FAMILY GUARDIANS TAB */}
+                  {adminTab === 'family' && (() => {
+                    const filtered = adminFamily.filter(fam => 
+                      fam.name.toLowerCase().includes(adminSearchQuery.toLowerCase()) ||
+                      fam.email.toLowerCase().includes(adminSearchQuery.toLowerCase()) ||
+                      (fam.patient_name && fam.patient_name.toLowerCase().includes(adminSearchQuery.toLowerCase())) ||
+                      (fam.relationship && fam.relationship.toLowerCase().includes(adminSearchQuery.toLowerCase()))
+                    );
+
+                    return (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--border-glass)', color: 'var(--text-muted)' }}>
+                            <th style={{ padding: '12px' }}>Guardian Name</th>
+                            <th style={{ padding: '12px' }}>Email Address</th>
+                            <th style={{ padding: '12px' }}>Relationship</th>
+                            <th style={{ padding: '12px' }}>Linked Patient</th>
+                            <th style={{ padding: '12px', textAlign: 'right' }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filtered.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>No guardians match the search criteria.</td>
+                            </tr>
+                          ) : (
+                            filtered.map(fam => (
+                              <tr key={fam.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>{fam.name}</td>
+                                <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>{fam.email}</td>
+                                <td style={{ padding: '12px' }}>
+                                  <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', fontSize: '11px', color: 'var(--text-primary)' }}>
+                                    {fam.relationship}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>
+                                  {fam.patient_name}
+                                </td>
+                                <td style={{ padding: '12px', textAlign: 'right' }}>
+                                  <div style={{ display: 'inline-flex', gap: '8px' }}>
+                                    <button 
+                                      className="btn-ack" 
+                                      onClick={() => {
+                                        setEditingFamily(fam);
+                                        setFamEmail(fam.email);
+                                        setFamPassword('');
+                                        setFamName(fam.name);
+                                        setFamFirstName(fam.name.split(' ')[0] || '');
+                                        setFamLastName(fam.name.split(' ').slice(1).join(' ') || '');
+                                        setFamPatientId(fam.patient_id || '');
+                                        setFamRelationship(fam.relationship || 'Son');
+                                        setShowFamilyModal(true);
+                                      }}
+                                      style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    >
+                                      <Edit size={12} /> Edit
+                                    </button>
+                                    <button 
+                                      className="btn-ack" 
+                                      onClick={() => handleDeleteFamily(fam.id, fam.name)}
+                                      style={{ padding: '4px 8px', fontSize: '11px', background: 'rgba(244, 63, 94, 0.1)', color: 'var(--emergency)', borderColor: 'rgba(244, 63, 94, 0.2)', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    >
+                                      <Trash2 size={12} /> Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    );
+                  })()}
+                </>
+              )}
             </div>
           </div>
 
+          {/* DYNAMIC MODALS OVERLAYS */}
+
+          {/* MODAL 1: BILLING SUB */}
           {selectedOrgSub && (
             <div className="auth-overlay">
-              <div className="auth-card glass-panel" style={{ maxWidth: '400px' }}>
-                <h3 style={{ color: 'var(--text-primary)', marginBottom: '14px' }}>Configure Subscription tier</h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>Adjust subscription tier status and validity dates for <strong>{selectedOrgSub.name}</strong>.</p>
+              <div className="auth-card glass-panel" style={{ maxWidth: '400px', width: '90%' }}>
+                <h3 style={{ color: 'var(--text-primary)', marginBottom: '14px', fontFamily: 'var(--font-heading)' }}>Configure Subscription tier</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>Adjust subscription status and validity for <strong>{selectedOrgSub.name}</strong>.</p>
                 <form onSubmit={handleUpdateSubscription} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <div className="form-group">
                     <label>Billing Tier Status</label>
@@ -1283,8 +2404,417 @@ function App() {
                     <input type="date" className="form-control" value={newSubExpiry} onChange={e => setNewSubExpiry(e.target.value)} required />
                   </div>
                   <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                    <button type="submit" className="btn btn-primary">Update Subscription</button>
+                    <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Update Subscription</button>
                     <button type="button" className="btn btn-secondary" onClick={() => setSelectedOrgSub(null)}>Cancel</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL 2: CLINICIAN */}
+          {showClinicianModal && (
+            <div className="auth-overlay">
+              <div className="auth-card glass-panel" style={{ maxWidth: '520px', width: '90%' }}>
+                <h3 style={{ color: 'var(--text-primary)', marginBottom: '14px', fontFamily: 'var(--font-heading)' }}>
+                  {editingClinician ? '🩺 Edit Doctor Profile' : '🩺 Add New Doctor'}
+                </h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '20px' }}>
+                  {editingClinician ? 'Modify details of the clinician account.' : 'Register a new clinician under an active clinic.'}
+                </p>
+                
+                <form onSubmit={handleClinicianSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div className="form-group">
+                      <label>First Name</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        placeholder="e.g. Suleiman" 
+                        value={clinFirstName} 
+                        onChange={e => {
+                          setClinFirstName(e.target.value);
+                          setClinName(`${e.target.value} ${clinLastName}`.trim());
+                        }} 
+                        required 
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Last Name</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        placeholder="e.g. Kh" 
+                        value={clinLastName} 
+                        onChange={e => {
+                          setClinLastName(e.target.value);
+                          setClinName(`${clinFirstName} ${e.target.value}`.trim());
+                        }} 
+                        required 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Display Name (Full Name)</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. Dr. Suleiman Kh" 
+                      value={clinName} 
+                      onChange={e => setClinName(e.target.value)} 
+                      required 
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Email Address</label>
+                    <input 
+                      type="email" 
+                      className="form-control" 
+                      placeholder="doctor@wristcare.com" 
+                      value={clinEmail} 
+                      onChange={e => setClinEmail(e.target.value)} 
+                      required 
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Password {editingClinician && <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>(Leave empty to keep current)</span>}</label>
+                    <input 
+                      type="password" 
+                      className="form-control" 
+                      placeholder={editingClinician ? "••••••••" : "Enter account password"} 
+                      value={clinPassword} 
+                      onChange={e => setClinPassword(e.target.value)} 
+                      required={!editingClinician} 
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div className="form-group">
+                      <label>Medical Specialty</label>
+                      <select className="form-control" value={clinSpecialty} onChange={e => setClinSpecialty(e.target.value)}>
+                        <option value="General Practice">General Practice (طب عام)</option>
+                        <option value="Cardiology">Cardiology (أمراض القلب)</option>
+                        <option value="Neurology">Neurology (مخ وأعصاب)</option>
+                        <option value="Orthopedics">Orthopedics (عظام)</option>
+                        <option value="Internal Medicine">Internal Medicine (باطني)</option>
+                        <option value="Geriatrics">Geriatrics (طب المسنين)</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Associated Clinic</label>
+                      <select 
+                        className="form-control" 
+                        value={clinOrgId} 
+                        onChange={e => setClinOrgId(e.target.value)} 
+                        required
+                      >
+                        <option value="" disabled>Select Organization</option>
+                        {organizations.map(org => (
+                          <option key={org.id} value={org.id}>{org.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+                    <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
+                      {editingClinician ? 'Save Changes' : 'Create Clinician'}
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      onClick={() => {
+                        setShowClinicianModal(false);
+                        setEditingClinician(null);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL 3: PATIENT */}
+          {showPatientModal && (
+            <div className="auth-overlay">
+              <div className="auth-card glass-panel" style={{ maxWidth: '520px', width: '90%' }}>
+                <h3 style={{ color: 'var(--text-primary)', marginBottom: '14px', fontFamily: 'var(--font-heading)' }}>
+                  {editingPatient ? '🧓 Edit Patient Profile' : '🧓 Add New Patient'}
+                </h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '20px' }}>
+                  {editingPatient ? 'Modify patient account settings and assignments.' : 'Register a new patient and configure threshold profiles.'}
+                </p>
+                
+                <form onSubmit={handlePatientSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div className="form-group">
+                      <label>First Name</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        placeholder="e.g. Ahmad" 
+                        value={patFirstName} 
+                        onChange={e => {
+                          setPatFirstName(e.target.value);
+                          setPatName(`${e.target.value} ${patLastName}`.trim());
+                        }} 
+                        required 
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Last Name</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        placeholder="e.g. Ali" 
+                        value={patLastName} 
+                        onChange={e => {
+                          setPatLastName(e.target.value);
+                          setPatName(`${patFirstName} ${e.target.value}`.trim());
+                        }} 
+                        required 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Display Name (Full Name)</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. Ahmad Ali" 
+                      value={patName} 
+                      onChange={e => setPatName(e.target.value)} 
+                      required 
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Email Address</label>
+                    <input 
+                      type="email" 
+                      className="form-control" 
+                      placeholder="patient@wristcare.com" 
+                      value={patEmail} 
+                      onChange={e => setPatEmail(e.target.value)} 
+                      required 
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Password {editingPatient && <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>(Leave empty to keep current)</span>}</label>
+                    <input 
+                      type="password" 
+                      className="form-control" 
+                      placeholder={editingPatient ? "••••••••" : "Enter account password"} 
+                      value={patPassword} 
+                      onChange={e => setPatPassword(e.target.value)} 
+                      required={!editingPatient} 
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div className="form-group">
+                      <label>Date of Birth</label>
+                      <input 
+                        type="date" 
+                        className="form-control" 
+                        value={patBirthDate} 
+                        onChange={e => setPatBirthDate(e.target.value)} 
+                        required 
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Subscription Tier</label>
+                      <select className="form-control" value={patTier} onChange={e => setPatTier(e.target.value as any)}>
+                        <option value="Free">Free (مجاني)</option>
+                        <option value="Basic">Basic (اساسي)</option>
+                        <option value="Premium">Premium (مميز)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div className="form-group">
+                      <label>Clinic Organization</label>
+                      <select 
+                        className="form-control" 
+                        value={patOrgId} 
+                        onChange={e => {
+                          setPatOrgId(e.target.value);
+                          setPatClinId('');
+                        }} 
+                        required
+                      >
+                        <option value="" disabled>Select Organization</option>
+                        {organizations.map(org => (
+                          <option key={org.id} value={org.id}>{org.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Primary Clinician</label>
+                      <select 
+                        className="form-control" 
+                        value={patClinId} 
+                        onChange={e => setPatClinId(e.target.value)}
+                      >
+                        <option value="">No Assigned Clinician (غير معين)</option>
+                        {adminClinicians
+                          .filter(c => c.organization_id === patOrgId)
+                          .map(clin => (
+                            <option key={clin.id} value={clin.id}>{clin.name} ({clin.specialty})</option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+                    <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
+                      {editingPatient ? 'Save Changes' : 'Create Patient'}
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      onClick={() => {
+                        setShowPatientModal(false);
+                        setEditingPatient(null);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL 4: FAMILY */}
+          {showFamilyModal && (
+            <div className="auth-overlay">
+              <div className="auth-card glass-panel" style={{ maxWidth: '520px', width: '90%' }}>
+                <h3 style={{ color: 'var(--text-primary)', marginBottom: '14px', fontFamily: 'var(--font-heading)' }}>
+                  {editingFamily ? '👥 Edit Family Guardian' : '👥 Add New Family Guardian'}
+                </h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '20px' }}>
+                  {editingFamily ? 'Modify family contact details and relation.' : 'Register a new family guardian and link them to a patient.'}
+                </p>
+                
+                <form onSubmit={handleFamilySubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div className="form-group">
+                      <label>First Name</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        placeholder="e.g. Khalid" 
+                        value={famFirstName} 
+                        onChange={e => {
+                          setFamFirstName(e.target.value);
+                          setFamName(`${e.target.value} ${famLastName}`.trim());
+                        }} 
+                        required 
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Last Name</label>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        placeholder="e.g. Ali" 
+                        value={famLastName} 
+                        onChange={e => {
+                          setFamLastName(e.target.value);
+                          setFamName(`${famFirstName} ${e.target.value}`.trim());
+                        }} 
+                        required 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Display Name (Full Name)</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. Khalid Ali" 
+                      value={famName} 
+                      onChange={e => setFamName(e.target.value)} 
+                      required 
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Email Address</label>
+                    <input 
+                      type="email" 
+                      className="form-control" 
+                      placeholder="family@wristcare.com" 
+                      value={famEmail} 
+                      onChange={e => setFamEmail(e.target.value)} 
+                      required 
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Password {editingFamily && <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>(Leave empty to keep current)</span>}</label>
+                    <input 
+                      type="password" 
+                      className="form-control" 
+                      placeholder={editingFamily ? "••••••••" : "Enter account password"} 
+                      value={famPassword} 
+                      onChange={e => setFamPassword(e.target.value)} 
+                      required={!editingFamily} 
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div className="form-group">
+                      <label>Linked Patient</label>
+                      <select 
+                        className="form-control" 
+                        value={famPatientId} 
+                        onChange={e => setFamPatientId(e.target.value)} 
+                        required
+                      >
+                        <option value="" disabled>Select Patient</option>
+                        {adminPatients.map(pat => (
+                          <option key={pat.id} value={pat.id}>{pat.name} ({pat.organization_name})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Relationship to Patient</label>
+                      <select className="form-control" value={famRelationship} onChange={e => setFamRelationship(e.target.value)}>
+                        <option value="Son">Son (ابن)</option>
+                        <option value="Daughter">Daughter (ابنة)</option>
+                        <option value="Spouse">Spouse (زوج / زوجة)</option>
+                        <option value="Parent">Parent (والد / والدة)</option>
+                        <option value="Sibling">Sibling (أخ / أخت)</option>
+                        <option value="Guardian">Guardian (وصي / مرافق)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+                    <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
+                      {editingFamily ? 'Save Changes' : 'Create Family Contact'}
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      onClick={() => {
+                        setShowFamilyModal(false);
+                        setEditingFamily(null);
+                      }}
+                    >
+                      Cancel
+                    </button>
                   </div>
                 </form>
               </div>
@@ -1671,10 +3201,71 @@ function App() {
 
           <section className="dashboard-content">
             <div className="charts-panel glass-panel">
-              <div className="panel-header">
-                <h2>Real-Time Vital Timeline Graphs</h2>
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Auto-updating Wearable Stream</span>
+              <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', paddingBottom: '16px' }}>
+                <div>
+                  <h2>Real-Time Vital Timeline Graphs</h2>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Auto-updating Wearable Stream</span>
+                </div>
+                <div style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', padding: '2px', borderRadius: '8px' }}>
+                  {['24h', '7d', '30d'].map((range) => (
+                    <button
+                      key={range}
+                      onClick={() => handleRangeChange(range)}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        border: 0,
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        background: vitalRange === range ? 'var(--primary)' : 'transparent',
+                        color: vitalRange === range ? 'white' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {range === '24h' ? '24 Hours' : range === '7d' ? '7 Days' : '30 Days'}
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {limitWarning && (
+                <div style={{
+                  margin: '0 24px 16px',
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(90deg, rgba(210, 153, 34, 0.12) 0%, rgba(210, 153, 34, 0.04) 100%)',
+                  border: '1px solid rgba(210, 153, 34, 0.25)',
+                  color: '#f1e05a',
+                  fontSize: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px'
+                }}>
+                  <span style={{ fontSize: '16px' }}>⚠️</span>
+                  <div style={{ flex: 1, textAlign: 'right', direction: 'rtl' }}>
+                    <strong>تنبيه الباقة:</strong> تم تقييد عرض البيانات لتناسب الباقة الحالية (${patientTier === 'Free' ? '7 أيام للباقة المجانية' : '30 يوماً للباقة الأساسية'}). يرجى الترقية لفتح سجلات تاريخية أطول.
+                  </div>
+                  {user.role === 'patient' && (
+                    <button
+                      onClick={() => setViewMode('profile')}
+                      style={{
+                        background: 'rgba(210, 153, 34, 0.15)',
+                        border: '1px solid rgba(210, 153, 34, 0.35)',
+                        color: '#f1e05a',
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      ترقية الباقة
+                    </button>
+                  )}
+                </div>
+              )}
 
               {telemetryHistory.length === 0 ? (
                 <div className="no-data">No active telemetry packets recorded for this patient.</div>
@@ -2068,13 +3659,129 @@ function App() {
                       </div>
                     )}
                   </div>
+
+                  {/* Billing & Subscription Manager Card */}
+                  <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', border: '1px solid var(--border-glass)' }}>
+                    <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '16px', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
+                      إدارة باقة الاشتراك والفوترة (Subscription & Billing)
+                    </h3>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        
+                        {/* Free Plan */}
+                        <div style={{
+                          padding: '12px',
+                          borderRadius: '8px',
+                          border: patientTier === 'Free' ? '1px solid var(--border-glass)' : '1px solid rgba(255,255,255,0.03)',
+                          background: patientTier === 'Free' ? 'rgba(255,255,255,0.02)' : 'transparent',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}>
+                          <div>
+                            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>الباقة المجانية (Free Plan)</span>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>مراقب عائلي واحد • 7 أيام تاريخ سجل طبي</div>
+                          </div>
+                          <button 
+                            type="button" 
+                            onClick={() => handlePlanUpgradeSelection('Free')}
+                            className="btn"
+                            style={{ 
+                              padding: '5px 10px', 
+                              fontSize: '11px', 
+                              minWidth: '80px', 
+                              borderRadius: '6px',
+                              background: patientTier === 'Free' ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.15)',
+                              border: '1px solid rgba(255,255,255,0.2)',
+                              color: 'white',
+                              cursor: patientTier === 'Free' ? 'default' : 'pointer'
+                            }}
+                            disabled={patientTier === 'Free'}
+                          >
+                            {patientTier === 'Free' ? 'نشطة' : 'تفعيل'}
+                          </button>
+                        </div>
+
+                        {/* Basic Plan */}
+                        <div style={{
+                          padding: '12px',
+                          borderRadius: '8px',
+                          border: patientTier === 'Basic' ? '1px solid rgba(56, 139, 253, 0.4)' : '1px solid rgba(255,255,255,0.03)',
+                          background: patientTier === 'Basic' ? 'rgba(56, 139, 253, 0.05)' : 'transparent',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}>
+                          <div>
+                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#58a6ff' }}>الباقة الأساسية (Basic Plan)</span>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>3 مراقبين عائلين • 30 يوماً سجل طبي • 5 د.أ/شهرياً</div>
+                          </div>
+                          <button 
+                            type="button" 
+                            onClick={() => handlePlanUpgradeSelection('Basic')}
+                            className="btn"
+                            style={{ 
+                              padding: '5px 10px', 
+                              fontSize: '11px', 
+                              minWidth: '80px', 
+                              borderRadius: '6px',
+                              background: patientTier === 'Basic' ? 'rgba(56, 139, 253, 0.1)' : 'var(--primary)',
+                              border: patientTier === 'Basic' ? '1px solid rgba(56, 139, 253, 0.3)' : '0',
+                              color: 'white',
+                              cursor: patientTier === 'Basic' ? 'default' : 'pointer'
+                            }}
+                            disabled={patientTier === 'Basic'}
+                          >
+                            {patientTier === 'Basic' ? 'نشطة' : 'ترقية'}
+                          </button>
+                        </div>
+
+                        {/* Premium Plan */}
+                        <div style={{
+                          padding: '12px',
+                          borderRadius: '8px',
+                          border: patientTier === 'Premium' ? '1px solid rgba(210, 153, 34, 0.4)' : '1px solid rgba(255,255,255,0.03)',
+                          background: patientTier === 'Premium' ? 'rgba(210, 153, 34, 0.05)' : 'transparent',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}>
+                          <div>
+                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#f1e05a' }}>الباقة المميزة (Premium Plan) ⭐</span>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>مراقبون غير محدودين • سجل طبي دائم • تقارير أسبوعية إيميل • 10 د.أ/شهرياً</div>
+                          </div>
+                          <button 
+                            type="button" 
+                            onClick={() => handlePlanUpgradeSelection('Premium')}
+                            className="btn"
+                            style={{ 
+                              padding: '5px 10px', 
+                              fontSize: '11px', 
+                              minWidth: '80px', 
+                              borderRadius: '6px', 
+                              background: patientTier === 'Premium' ? 'rgba(210, 153, 34, 0.1)' : 'linear-gradient(90deg, #d29922, #f1e05a)', 
+                              color: patientTier === 'Premium' ? '#f1e05a' : '#0d1117', 
+                              border: patientTier === 'Premium' ? '1px solid rgba(210, 153, 34, 0.3)' : '0',
+                              fontWeight: 700,
+                              cursor: patientTier === 'Premium' ? 'default' : 'pointer'
+                            }}
+                            disabled={patientTier === 'Premium'}
+                          >
+                            {patientTier === 'Premium' ? 'نشطة' : 'ترقية'}
+                          </button>
+                        </div>
+
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           ) : (
             <>
               <div className="glass-panel" style={{ padding: '20px', borderRadius: '16px', background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99,102,241,0.1)' }}>
-                <h2>أهلاً بك يا {user.name} 👋</h2>
+                <h2>أهلاً بك يا {user.name}</h2>
                 <p style={{ color: 'var(--text-secondary)', marginTop: '6px' }}>حالتك الصحية مراقبة مباشرة من خلال ساعتك الذكية. يتم إرسال نبضات القلب ونسبة الأكسجين لمركز المتابعة الطبي الخاص بك تلقائياً.</p>
               </div>
 
@@ -2337,10 +4044,53 @@ function App() {
 
               <section className="dashboard-content">
                 <div className="charts-panel glass-panel" style={{ gridColumn: 'span 2' }}>
-                  <div className="panel-header">
-                    <h2>Health History Graph</h2>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Latest Wearable Sync Records</span>
+                  <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', paddingBottom: '16px' }}>
+                    <div>
+                      <h2>Health History Graph</h2>
+                      <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Latest Wearable Sync Records</span>
+                    </div>
+                    <div style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', padding: '2px', borderRadius: '8px' }}>
+                      {['24h', '7d', '30d'].map((range) => (
+                        <button
+                          key={range}
+                          onClick={() => handleRangeChange(range)}
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            border: 0,
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            background: vitalRange === range ? 'var(--primary)' : 'transparent',
+                            color: vitalRange === range ? 'white' : 'var(--text-muted)',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          {range === '24h' ? '24 Hours' : range === '7d' ? '7 Days' : '30 Days'}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+
+                  {limitWarning && (
+                    <div style={{
+                      margin: '0 24px 16px',
+                      padding: '12px 16px',
+                      borderRadius: '10px',
+                      background: 'linear-gradient(90deg, rgba(210, 153, 34, 0.12) 0%, rgba(210, 153, 34, 0.04) 100%)',
+                      border: '1px solid rgba(210, 153, 34, 0.25)',
+                      color: '#f1e05a',
+                      fontSize: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px'
+                    }}>
+                      <span style={{ fontSize: '16px' }}>⚠️</span>
+                      <div style={{ flex: 1, textAlign: 'right', direction: 'rtl' }}>
+                        <strong>تنبيه الباقة:</strong> تم تقييد عرض البيانات لتناسب باقة المريض الحالية (${patientTier === 'Free' ? '7 أيام للباقة المجانية' : '30 يوماً للباقة الأساسية'}). يرجى ترقية باقة المريض لفتح سجلات تاريخية أطول.
+                      </div>
+                    </div>
+                  )}
 
                   {telemetryHistory.length === 0 ? (
                     <div className="no-data">No active telemetry packets recorded for this patient.</div>

@@ -7,8 +7,12 @@ import { Server } from 'socket.io';
 import vitalsRouter from './src/routes/vitals';
 import authRouter from './src/routes/auth';
 import pool from './src/db/pool';
+import { initReportCron } from './src/services/reportService';
 
 dotenv.config();
+
+// Initialize weekly CRON reports service
+initReportCron();
 
 const app = express();
 

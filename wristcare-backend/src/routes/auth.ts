@@ -550,7 +550,7 @@ router.get('/connections', async (req: Request, res: Response) => {
       
     } else if (userRole === 'family') {
       const [fmRows] = await pool.execute(
-        `SELECT fm.id, fm.relationship, p.id AS patient_id, p.first_name, p.last_name, p.birth_date,
+        `SELECT fm.id, fm.relationship, p.id AS patient_id, p.first_name, p.last_name, p.birth_date, p.subscription_tier,
                 c.first_name AS clinician_first_name, c.last_name AS clinician_last_name
          FROM family_members fm
          INNER JOIN patients p ON fm.patient_id = p.id
@@ -607,7 +607,7 @@ router.put('/profile/update', async (req: Request, res: Response) => {
     const userId = decoded.id;
     const userRole = decoded.role;
     
-    const { name, email, specialty, primaryClinicianId, patientId, relationship, birthDate } = req.body;
+    const { name, email, specialty, primaryClinicianId, patientId, relationship, birthDate, subscriptionTier } = req.body;
     
     const connection = await pool.getConnection();
     try {
@@ -672,6 +672,11 @@ router.put('/profile/update', async (req: Request, res: Response) => {
             updateQuery += ', primary_clinician_id = ?';
             params.push(primaryClinicianId === '' || primaryClinicianId === null ? null : primaryClinicianId);
           }
+
+          if (subscriptionTier !== undefined) {
+            updateQuery += ', subscription_tier = ?';
+            params.push(subscriptionTier);
+          }
           
           updateQuery += ' WHERE id = ?';
           params.push(patId);
@@ -680,11 +685,39 @@ router.put('/profile/update', async (req: Request, res: Response) => {
         }
       } else if (userRole === 'family') {
         if (patientId && relationship) {
-          const [patRows] = await connection.execute('SELECT id FROM patients WHERE id = ?', [patientId]);
+          const [patRows] = await connection.execute('SELECT id, subscription_tier FROM patients WHERE id = ?', [patientId]);
           if ((patRows as any[]).length === 0) {
             await connection.rollback();
             connection.release();
             return res.status(404).json({ error: 'Target Patient ID is not valid or not found.' });
+          }
+          
+          const targetPatient = (patRows as any[])[0];
+          const tier = targetPatient.subscription_tier || 'Free';
+          
+          // Count linked family members excluding this user (in case they are updating their existing relation to the same patient)
+          const [countRows] = await connection.execute(
+            'SELECT COUNT(*) AS count FROM family_members WHERE patient_id = ? AND user_id != ?',
+            [patientId, userId]
+          );
+          const currentCount = (countRows as any[])[0].count;
+          
+          if (tier === 'Free' && currentCount >= 1) {
+            await connection.rollback();
+            connection.release();
+            return res.status(402).json({
+              error: 'عذراً، أقصى حد مسموح به للباقة المجانية (Free) هو مراقب عائلي واحد فقط. يرجى ترقية باقة المريض لفتح ربط حسابات عائلية إضافية.',
+              limitExceeded: true,
+              tier
+            });
+          } else if (tier === 'Basic' && currentCount >= 3) {
+            await connection.rollback();
+            connection.release();
+            return res.status(402).json({
+              error: 'عذراً، أقصى حد مسموح به للباقة المتوسطة (Basic) هو 3 مراقبين عائليين فقط. يرجى ترقية باقة المريض للمميزة لربط حسابات عائلية إضافية.',
+              limitExceeded: true,
+              tier
+            });
           }
           
           const familyUUID = crypto.randomUUID();
@@ -726,7 +759,7 @@ router.put('/profile/update', async (req: Request, res: Response) => {
         }
       } else if (user.role === 'family') {
         const [rows] = await pool.execute(
-          `SELECT fm.*, p.organization_id, p.first_name AS rel_first_name, p.last_name AS rel_last_name
+          `SELECT fm.*, p.organization_id, p.first_name AS rel_first_name, p.last_name AS rel_last_name, p.subscription_tier
            FROM family_members fm
            INNER JOIN patients p ON fm.patient_id = p.id
            WHERE fm.user_id = ?`,
