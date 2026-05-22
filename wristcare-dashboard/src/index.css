@@ -504,6 +504,12 @@ body {
   box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
 }
 
+.form-control option,
+select option {
+  color: #0f172a !important;
+  background-color: #ffffff !important;
+}
+
 .btn {
   width: 100%;
   padding: 12px;
