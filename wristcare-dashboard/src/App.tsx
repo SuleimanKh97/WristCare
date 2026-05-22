@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
+import Swal from 'sweetalert2';
 import { 
   ResponsiveContainer, 
   AreaChart, 
@@ -25,7 +26,8 @@ import {
   Building,
   UserCheck,
   Eye,
-  Sliders
+  Sliders,
+  X
 } from 'lucide-react';
 
 const API_BASE = 'http://localhost:3000';
@@ -107,7 +109,7 @@ function App() {
   // Real-Time Telemetry and Alarm states
   const [activeAlerts, setActiveAlerts] = useState<AlertItem[]>([]);
   const [telemetryHistory, setTelemetryHistory] = useState<VitalRecord[]>([]);
-  const [popups, setPopups] = useState<any[]>([]);
+
 
   // Simulation forms states
   const [simHR, setSimHR] = useState('72');
@@ -132,11 +134,34 @@ function App() {
     { id: 'demo-p2', firstName: 'Fatima', lastName: 'Omar', birth_date: '1958-09-22' }
   ]);
   const [selectedPatientId, setSelectedPatientId] = useState('demo-p1');
+  const clinicianPatientsRef = useRef(clinicianPatients);
+  useEffect(() => {
+    clinicianPatientsRef.current = clinicianPatients;
+  }, [clinicianPatients]);
+  const selectedPatientIdRef = useRef(selectedPatientId);
+  useEffect(() => {
+    selectedPatientIdRef.current = selectedPatientId;
+  }, [selectedPatientId]);
+  const userRef = useRef(user);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   // Alerts log history states
   const [viewMode, setViewMode] = useState<'monitor' | 'alerts_history'>('monitor');
   const [allAlertsLog, setAllAlertsLog] = useState<any[]>([]);
   const [isFetchingAllAlerts, setIsFetchingAllAlerts] = useState(false);
+  const [selectedLetterAlert, setSelectedLetterAlert] = useState<any | null>(null);
+
+  const getPatientBirthDate = (pId: string) => {
+    if (!pId) return 'N/A';
+    const match = clinicianPatients.find(p => p.id === pId);
+    if (match && match.birth_date) return match.birth_date;
+    if (pId === 'demo-p1') return '1954-04-12';
+    if (pId === 'demo-p2') return '1958-09-22';
+    if (pId === 'demo-p3') return '1946-08-15';
+    return 'N/A';
+  };
 
   const getPatientName = (pId: string) => {
     if (!pId) return 'Unknown Patient';
@@ -241,7 +266,6 @@ function App() {
 
       // Add to alert listings
       setActiveAlerts(prev => [newAlert, ...prev].slice(0, 50));
-      setPopups(prev => [...prev, newAlert]);
 
       // Add to full alerts log in real-time
       setAllAlertsLog(prev => [
@@ -253,10 +277,53 @@ function App() {
         ...prev
       ]);
 
-      // Auto-dismiss warning banner popup after 8 seconds
-      setTimeout(() => {
-        setPopups(prev => prev.filter(p => p.id !== newAlert.id));
-      }, 8000);
+      // Trigger a beautiful SweetAlert2 notification overlay matching design specs
+      const latestPatients = clinicianPatientsRef.current;
+      const name = latestPatients.find(cp => cp.id === patientId)
+        ? `${latestPatients.find(cp => cp.id === patientId).firstName} ${latestPatients.find(cp => cp.id === patientId).lastName}`
+        : getPatientName(patientId);
+
+      const patientDetails = latestPatients.find(cp => cp.id === patientId);
+      const age = patientDetails?.birth_date 
+        ? new Date().getFullYear() - new Date(patientDetails.birth_date).getFullYear()
+        : null;
+
+      const patientFileHtml = `
+        <div style="font-weight: 600; color: #fca5a5; margin-bottom: 14px; text-align: center; font-size: 15px; font-family: var(--font-sans);">
+          ⚠️ ${newAlert.message || `${newAlert.severity} threshold breach on ${newAlert.metric}: ${newAlert.value}`}
+        </div>
+        <div class="glass-panel" style="
+          margin: 16px 0 8px 0; 
+          padding: 12px 16px; 
+          border-radius: 12px; 
+          background: rgba(255, 255, 255, 0.03); 
+          border: 1px solid rgba(255, 255, 255, 0.05);
+          font-size: 12px;
+          line-height: 1.5;
+          text-align: left;
+        ">
+          <div style="font-weight: 700; color: #f3f4f6; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 6px; margin-bottom: 6px; font-family: var(--font-heading);">
+            👤 Clinical Patient File
+          </div>
+          <div><strong style="color: #9ca3af;">Full Name:</strong> <span style="color: #fff; font-weight: 700;">${name}</span></div>
+          <div><strong style="color: #9ca3af;">Patient ID:</strong> <code style="color: var(--primary); font-weight: 600;">${patientId}</code></div>
+          ${age ? `<div><strong style="color: #9ca3af;">Age / DOB:</strong> <span style="color: #fff;">${age} years old (${patientDetails.birth_date})</span></div>` : ''}
+        </div>
+      `;
+
+      Swal.fire({
+        title: `${newAlert.severity} Warning Triggered`,
+        html: patientFileHtml,
+        icon: 'error',
+        confirmButtonText: 'Dismiss Warning Banner',
+        customClass: {
+          popup: 'swal-custom-popup',
+          title: 'swal-custom-title',
+          htmlContainer: 'swal-custom-html',
+          confirmButton: 'swal-custom-dismiss-btn'
+        },
+        buttonsStyling: false
+      });
     });
 
     socket.on('alert_acknowledged', (updatedAlert: any) => {
@@ -417,9 +484,31 @@ function App() {
       });
 
       if (res.ok) {
-        alert('✓ Customized clinical vital thresholds saved successfully.');
+        Swal.fire({
+          icon: 'success',
+          title: 'Saved Successfully',
+          text: 'Customized clinical vital thresholds saved successfully.',
+          customClass: {
+            popup: 'swal-custom-popup',
+            title: 'swal-custom-title',
+            htmlContainer: 'swal-custom-html',
+            confirmButton: 'swal-custom-confirm-btn'
+          },
+          buttonsStyling: false
+        });
       } else {
-        alert('Failed to save vital configurations.');
+        Swal.fire({
+          icon: 'error',
+          title: 'Save Failed',
+          text: 'Failed to save vital configurations.',
+          customClass: {
+            popup: 'swal-custom-popup',
+            title: 'swal-custom-title',
+            htmlContainer: 'swal-custom-html',
+            confirmButton: 'swal-custom-confirm-btn'
+          },
+          buttonsStyling: false
+        });
       }
     } catch (e) {
       console.error(e);
@@ -463,8 +552,31 @@ function App() {
   };
 
   const handleResolveAlert = async (id: string) => {
-    const notes = prompt("Enter clinical resolution notes:");
-    if (notes === null) return;
+    const { value: notes } = await Swal.fire({
+      title: 'Resolve Alert',
+      text: 'Enter clinical resolution notes:',
+      input: 'text',
+      inputPlaceholder: 'Type clinical notes here...',
+      showCancelButton: true,
+      confirmButtonText: 'Resolve Alert',
+      cancelButtonText: 'Cancel',
+      customClass: {
+        popup: 'swal-custom-popup',
+        title: 'swal-custom-title',
+        htmlContainer: 'swal-custom-html',
+        confirmButton: 'swal-custom-confirm-btn',
+        cancelButton: 'swal-custom-cancel-btn',
+        input: 'swal-custom-input'
+      },
+      buttonsStyling: false,
+      inputValidator: (value) => {
+        if (!value) {
+          return 'You must enter clinical notes to resolve this alert!';
+        }
+      }
+    });
+
+    if (!notes) return;
     try {
       await fetch(`${API_BASE}/api/vitals/alerts/${id}/resolve`, {
         method: 'PUT',
@@ -605,9 +717,7 @@ function App() {
     setActiveAlerts([]);
   };
 
-  const dismissPopup = (id: string) => {
-    setPopups(prev => prev.filter(p => p.id !== id));
-  };
+
 
   // Rendering CSS Styles Class generator
   const getOverallSeverity = (val: string | undefined) => {
@@ -1144,6 +1254,7 @@ function App() {
                                 {alert.status !== 'Resolved' && (
                                   <button className="btn-ack" onClick={() => handleResolveAlert(alert.id)} style={{ padding: '4px 8px', fontSize: '11px' }}>Resolve</button>
                                 )}
+                                <button className="btn-ack" onClick={() => setSelectedLetterAlert(alert)} style={{ padding: '4px 8px', fontSize: '11px', color: 'var(--normal)' }}>Clinical Letter</button>
                               </div>
                             </td>
                           </tr>
@@ -1300,6 +1411,7 @@ function App() {
                                 {alert.status !== 'Resolved' && (
                                   <button className="btn-ack" onClick={() => handleResolveAlert(alert.id)}>Resolve</button>
                                 )}
+                                <button className="btn-ack" onClick={() => setSelectedLetterAlert(alert)} style={{ color: 'var(--normal)' }}>Clinical Letter</button>
                               </div>
                             </div>
                           </div>
@@ -1581,66 +1693,127 @@ function App() {
         </div>
       )}
 
-      {/* Real-Time Animated Overlay Warning Popups */}
-      <div className="alert-popup-overlay">
-        {popups.map(p => {
-          const patientId = p.patient_id || p.patientId || '';
-          const name = getPatientName(patientId);
-          const patientDetails = clinicianPatients.find(cp => cp.id === patientId);
-          const age = patientDetails?.birth_date 
-            ? new Date().getFullYear() - new Date(patientDetails.birth_date).getFullYear()
-            : null;
 
-          return (
-            <div key={p.id} className="alert-popup Emergency" style={{ minWidth: '320px' }}>
-              <div className="alert-popup-icon">
-                <ShieldAlert size={28} />
+
+      {/* Professional Clinical Letter Generator Modal */}
+      {selectedLetterAlert && (() => {
+        const alertItem = selectedLetterAlert;
+        const patientId = alertItem.patient_id || alertItem.patientId || '';
+        const patientName = getPatientName(patientId);
+        const dob = getPatientBirthDate(patientId);
+        
+        // Find safe bounds configured for the patient
+        const metricName = alertItem.metric === 'heart_rate' ? 'Heart Rate' 
+          : alertItem.metric === 'spo2' ? 'Oxygen SpO2' 
+          : alertItem.metric === 'systolic_bp' ? 'Systolic BP' 
+          : 'Diastolic BP';
+
+        const safeRange = alertItem.metric === 'heart_rate' ? '60 - 100 BPM'
+          : alertItem.metric === 'spo2' ? '95 - 100%'
+          : alertItem.metric === 'systolic_bp' ? '90 - 139 mmHg'
+          : '60 - 89 mmHg';
+
+        const formalRecommendations = alertItem.severity === 'Emergency' || alertItem.severity === 'Critical'
+          ? 'Mandatory immediate clinical review and physician response. The patient\'s telemetry data indicates a high-risk condition. Rest, continuous monitoring, and urgent medical intervention are required.'
+          : alertItem.severity === 'High'
+          ? 'Urgent consultation with the attending physician is advised within 24 hours. Attending nurse staff should evaluate potential modifications to standard pharmacotherapy or clinical care routines.'
+          : 'Standard clinical telemetry follow-up. Standard monitoring protocols are sufficient. Regular review during scheduled visits is recommended.';
+
+        const generatedRefCode = `WC-REF-${alertItem.id?.slice(0, 8).toUpperCase()}`;
+
+        return (
+          <div className="modal-overlay" onClick={() => setSelectedLetterAlert(null)}>
+            <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3>📋 Attending Physician Clinical Letter Generator</h3>
+                <button className="modal-close-btn" onClick={() => setSelectedLetterAlert(null)}>
+                  <X size={20} />
+                </button>
               </div>
-              <div className="alert-popup-content">
-                <div className="alert-popup-header">
-                  <h4 style={{ textTransform: 'uppercase', letterSpacing: '1px' }}>{p.severity} Warning Triggered</h4>
-                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>Live Wearable Link</span>
-                </div>
-                <p className="alert-popup-body" style={{ fontWeight: 600, color: '#fca5a5' }}>{p.message}</p>
-                
-                {/* Dynamic Patient Details Badge Area */}
-                <div className="glass-panel" style={{ 
-                  margin: '10px 0', 
-                  padding: '8px 12px', 
-                  borderRadius: '8px', 
-                  background: 'rgba(255, 255, 255, 0.03)', 
-                  border: '1px solid rgba(255, 255, 255, 0.05)',
-                  fontSize: '11px',
-                  lineHeight: '1.4',
-                  textAlign: 'left'
-                }}>
-                  <div style={{ fontWeight: 700, color: '#f3f4f6', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '4px', marginBottom: '4px' }}>
-                    👤 Clinical Patient File
+              <div className="modal-content-scroll">
+                <div className="clinical-letter-paper">
+                  <div className="clinical-letter-header">
+                    <div className="clinical-letter-title-section">
+                      <h1>WRISTCARE MEDICAL MONITORING CENTER</h1>
+                      <p>Official Patient Telemetry Warning Report</p>
+                    </div>
+                    <div className="clinical-letter-meta-block">
+                      <strong>Ref Code:</strong> {generatedRefCode}<br />
+                      <strong>Date Generated:</strong> {new Date().toLocaleDateString()}<br />
+                      <strong>Status:</strong> <span className={`severity-indicator ${alertItem.status}`}>{alertItem.status}</span>
+                    </div>
                   </div>
-                  <div><strong style={{ color: '#9ca3af' }}>Full Name:</strong> <span style={{ color: '#fff', fontWeight: 700 }}>{name}</span></div>
-                  {patientDetails && (
-                    <>
-                      <div><strong style={{ color: '#9ca3af' }}>Patient ID:</strong> <code style={{ color: 'var(--primary)' }}>{patientId}</code></div>
-                      {age && <div><strong style={{ color: '#9ca3af' }}>Age / DOB:</strong> <span style={{ color: '#fff' }}>{age} years old ({patientDetails.birth_date})</span></div>}
-                    </>
-                  )}
-                  {!patientDetails && (
-                    <div><strong style={{ color: '#9ca3af' }}>Patient ID:</strong> <code style={{ color: 'var(--primary)' }}>{patientId}</code></div>
-                  )}
-                </div>
 
+                  <div className="clinical-letter-grid">
+                    <div className="clinical-letter-grid-col">
+                      <label>Patient Information</label>
+                      <span>{patientName}</span><br />
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>Date of Birth: {dob}</span>
+                    </div>
+                    <div className="clinical-letter-grid-col">
+                      <label>Issuing Institution</label>
+                      <span>{user?.details?.organizationId ? `Clinic ID: ${user.details.organizationId.slice(0,8).toUpperCase()}` : 'General Telemetry Facility'}</span><br />
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>Provider: Dr. {user?.name || 'Attending Clinician'}</span>
+                    </div>
+                  </div>
+
+                  <div className="clinical-letter-body">
+                    <h3>1. Telemetry Breach Event Notification</h3>
+                    <p>
+                      This official document serves as a formal medical notification regarding the continuous remote telemetry monitoring of patient <strong>{patientName}</strong>. 
+                      On <strong>{new Date(alertItem.triggered_at).toLocaleDateString()}</strong> at <strong>{new Date(alertItem.triggered_at).toLocaleTimeString()}</strong>, the WristCare wearable sensory device registered a clear threshold violation for the patient's vital metric: <strong>{metricName}</strong>.
+                    </p>
+                    <p>
+                      The telemetry reading was recorded at <strong style={{ color: 'var(--emergency)' }}>{alertItem.value}</strong>, which deviates from the patient's customized safe limits of <strong>{safeRange}</strong>. This threshold breach is officially designated at a severity level of: <span className={`severity-indicator ${alertItem.severity}`}>{alertItem.severity}</span>.
+                    </p>
+
+                    <h3>2. Clinical Assessment & Attending Action Items</h3>
+                    <p>
+                      <strong>Diagnostic Assessment Remarks:</strong> The system has logged this event with the clinical alert message: <em>"{alertItem.message || `${alertItem.severity} breach detected on ${metricName}: ${alertItem.value}`}"</em>.
+                    </p>
+                    <p>
+                      <strong>Attending Clinician Remarks:</strong> {alertItem.clinician_notes || 'Pending clinician assessment review. Rest is recommended.'}
+                    </p>
+
+                    <h3>3. Formal Clinical Recommendations</h3>
+                    <p>{formalRecommendations}</p>
+                    <p>
+                      Attending medical professionals are requested to merge this notice sheet directly into the patient's Electronic Health Record (EHR) database in compliance with international health telemetry guidelines.
+                    </p>
+                  </div>
+
+                  <div className="clinical-letter-signatures">
+                    <div className="signature-block">
+                      <div className="signature-line"></div>
+                      <div className="signature-title">WristCare Ingestion System Signature</div>
+                    </div>
+                    <div className="signature-block">
+                      <div className="signature-line"></div>
+                      <div className="signature-title">Attending Doctor / Clinician Signature</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
                 <button 
-                  className="btn-popup-dismiss"
-                  onClick={() => dismissPopup(p.id)}
-                  style={{ width: '100%', marginTop: '4px' }}
+                  className="btn btn-secondary" 
+                  onClick={() => setSelectedLetterAlert(null)}
+                  style={{ width: 'auto', padding: '8px 16px' }}
                 >
-                  Dismiss Warning Banner
+                  Close Editor
+                </button>
+                <button 
+                  className="btn btn-primary" 
+                  onClick={() => window.print()}
+                  style={{ width: 'auto', padding: '8px 16px' }}
+                >
+                  🖨️ Print Clinical Letter
                 </button>
               </div>
             </div>
-          );
-        })}
-      </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

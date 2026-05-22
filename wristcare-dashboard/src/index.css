@@ -857,3 +857,414 @@ select option {
   25% { transform: translateX(-6px); }
   75% { transform: translateX(6px); }
 }
+
+/* ==========================================================================
+   Clinical Letter Modal Styles
+   ========================================================================== */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(7, 9, 14, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 3000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+}
+
+.modal-container {
+  width: 100%;
+  max-width: 800px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  background: #0f172a;
+  border: 1px solid var(--border-glass);
+  border-radius: 16px;
+  box-shadow: var(--shadow-premium);
+  overflow: hidden;
+  animation: auth-scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.modal-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border-glass);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(30, 41, 59, 0.3);
+}
+
+.modal-header h3 {
+  font-family: var(--font-heading);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.modal-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: var(--transition-smooth);
+}
+
+.modal-close-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-white);
+}
+
+.modal-content-scroll {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.clinical-letter-paper {
+  background: #ffffff;
+  color: #1e293b;
+  padding: 40px;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  font-family: 'Inter', -apple-system, sans-serif;
+  line-height: 1.6;
+  position: relative;
+  text-align: left;
+}
+
+.clinical-letter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 2px solid #334155;
+  padding-bottom: 20px;
+  margin-bottom: 24px;
+}
+
+.clinical-letter-title-section h1 {
+  font-family: 'Outfit', sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  color: #0f172a;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0;
+  background: none;
+  -webkit-text-fill-color: initial;
+}
+
+.clinical-letter-title-section p {
+  font-size: 11px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+  margin: 2px 0 0 0;
+}
+
+.clinical-letter-meta-block {
+  text-align: right;
+  font-size: 12px;
+  color: #475569;
+}
+
+.clinical-letter-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 24px;
+  background: #f8fafc;
+  padding: 16px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.clinical-letter-grid-col label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.clinical-letter-grid-col span {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.clinical-letter-body {
+  font-size: 14px;
+  color: #334155;
+  margin-bottom: 24px;
+}
+
+.clinical-letter-body h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-top: 18px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #cbd5e1;
+  padding-bottom: 4px;
+}
+
+.clinical-letter-body p {
+  margin-bottom: 14px;
+}
+
+.severity-indicator {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.severity-indicator.Normal { background: #d1fae5; color: #065f46; }
+.severity-indicator.Medium { background: #fef3c7; color: #92400e; }
+.severity-indicator.High { background: #ffedd5; color: #9a3412; }
+.severity-indicator.Emergency, .severity-indicator.Critical { background: #ffe4e6; color: #9f1239; }
+
+.clinical-letter-signatures {
+  margin-top: 40px;
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px dashed #cbd5e1;
+  padding-top: 24px;
+}
+
+.signature-block {
+  width: 200px;
+  text-align: center;
+}
+
+.signature-line {
+  border-bottom: 1px solid #475569;
+  height: 40px;
+  margin-bottom: 8px;
+}
+
+.signature-title {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-glass);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  background: rgba(30, 41, 59, 0.2);
+}
+
+/* Print Stylesheet Overrides */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .modal-overlay,
+  .modal-overlay * {
+    visibility: hidden;
+  }
+  .clinical-letter-paper,
+  .clinical-letter-paper * {
+    visibility: visible;
+  }
+  .clinical-letter-paper {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+}
+
+/* ==========================================================================
+   SweetAlert2 Custom Styling for Premium Dark Glassmorphic Theme
+   ========================================================================== */
+
+/* Overriding Swal popup and backdrop */
+.swal2-container.swal2-backdrop-show {
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  background: rgba(11, 15, 25, 0.6) !important;
+}
+
+.swal2-popup.swal-custom-popup {
+  background: rgba(15, 23, 42, 0.95) !important;
+  backdrop-filter: var(--blur-amount) !important;
+  -webkit-backdrop-filter: var(--blur-amount) !important;
+  border: 1px solid var(--border-glass) !important;
+  border-radius: 16px !important;
+  box-shadow: var(--shadow-premium) !important;
+  padding: 2.5rem 1.5rem !important;
+}
+
+/* Typography Scale */
+.swal2-title.swal-custom-title {
+  font-family: var(--font-heading) !important;
+  color: var(--text-white) !important;
+  font-size: 22px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.5px !important;
+  padding-bottom: 0.5rem !important;
+}
+
+.swal2-html-container.swal-custom-html {
+  font-family: var(--font-sans) !important;
+  color: var(--text-secondary) !important;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+}
+
+/* Custom buttons */
+.swal2-actions {
+  margin-top: 1.75rem !important;
+  gap: 12px !important;
+}
+
+.swal2-styled.swal-custom-confirm-btn {
+  background-color: var(--primary) !important;
+  color: var(--text-white) !important;
+  border-radius: 8px !important;
+  font-family: var(--font-heading) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  padding: 10px 24px !important;
+  border: none !important;
+  box-shadow: none !important;
+  transition: var(--transition-smooth) !important;
+  cursor: pointer !important;
+}
+
+.swal2-styled.swal-custom-confirm-btn:hover {
+  background-color: #4f46e5 !important;
+  box-shadow: var(--shadow-glow) !important;
+  transform: translateY(-1px) !important;
+}
+
+.swal2-styled.swal-custom-confirm-btn:focus {
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.4) !important;
+}
+
+.swal2-styled.swal-custom-cancel-btn {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  color: var(--text-secondary) !important;
+  border-radius: 8px !important;
+  font-family: var(--font-heading) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  padding: 10px 24px !important;
+  border: 1px solid var(--border-glass) !important;
+  box-shadow: none !important;
+  transition: var(--transition-smooth) !important;
+  cursor: pointer !important;
+}
+
+.swal2-styled.swal-custom-cancel-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: var(--text-white) !important;
+}
+
+.swal2-styled.swal-custom-dismiss-btn {
+  background-color: var(--emergency) !important;
+  color: var(--text-white) !important;
+  border-radius: 8px !important;
+  font-family: var(--font-heading) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  padding: 12px 24px !important;
+  border: none !important;
+  box-shadow: none !important;
+  transition: var(--transition-smooth) !important;
+  cursor: pointer !important;
+  width: 100% !important;
+  margin-top: 8px !important;
+}
+
+.swal2-styled.swal-custom-dismiss-btn:hover {
+  background-color: #e11d48 !important;
+  box-shadow: 0 0 15px rgba(244, 63, 94, 0.4) !important;
+  transform: translateY(-1px) !important;
+}
+
+.swal2-styled.swal-custom-dismiss-btn:focus {
+  box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.4) !important;
+}
+
+/* Custom inputs for prompts */
+.swal2-input.swal-custom-input {
+  background: var(--bg-control) !important;
+  border: 1px solid var(--border-glass) !important;
+  border-radius: 8px !important;
+  color: var(--text-white) !important;
+  font-size: 14px !important;
+  font-family: var(--font-sans) !important;
+  box-shadow: none !important;
+  height: 44px !important;
+  padding: 0 14px !important;
+  margin: 1.25rem auto 0 auto !important;
+  transition: var(--transition-smooth) !important;
+  width: 90% !important;
+}
+
+.swal2-input.swal-custom-input:focus {
+  border-color: var(--border-active) !important;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.2) !important;
+  outline: none !important;
+}
+
+/* Override error message for input validation */
+.swal2-validation-message {
+  background: rgba(244, 63, 94, 0.1) !important;
+  color: var(--emergency) !important;
+  border: 1px solid var(--emergency-border) !important;
+  font-family: var(--font-sans) !important;
+  font-size: 12px !important;
+  border-radius: 8px !important;
+  margin-top: 10px !important;
+  padding: 8px 12px !important;
+}
+
+/* Customize icons colors to HSL standard variables */
+.swal2-icon.swal2-success {
+  border-color: var(--normal) !important;
+  color: var(--normal) !important;
+}
+.swal2-icon.swal2-success [class^='swal2-success-line'] {
+  background-color: var(--normal) !important;
+}
+.swal2-icon.swal2-success .swal2-success-ring {
+  border: 4px solid rgba(16, 185, 129, 0.3) !important;
+}
+
+.swal2-icon.swal2-error {
+  border-color: var(--emergency) !important;
+}
+.swal2-icon.swal2-error [class^='swal2-x-mark-line'] {
+  background-color: var(--emergency) !important;
+}
+
+.swal2-icon.swal2-warning {
+  border-color: var(--medium) !important;
+  color: var(--medium) !important;
+}
+
+.swal2-icon.swal2-info {
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+}
